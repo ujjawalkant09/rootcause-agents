@@ -1,4 +1,5 @@
 from rootcause_agents.budget import Budget, BudgetTracker, decide_outcome, should_continue
+from rootcause_agents.llm import Usage
 from rootcause_agents.schemas import CriticVerdict, Hypothesis
 
 
@@ -36,7 +37,18 @@ def test_should_continue():
 
 def test_budget_tokens_and_time():
     b = BudgetTracker(Budget(max_total_tokens=100))
-    b.add_tokens(60, 50, cost=0.01)
+    b.add_usage("critic", Usage(60, 50, 0), cost=0.01)
     assert b.exhausted() and "tokens" in b.exhausted_reason()
     b2 = BudgetTracker(Budget(max_wall_clock_s=0))
     assert b2.exhausted()
+
+
+def test_usage_tracked_per_role():
+    b = BudgetTracker(Budget())
+    b.add_usage("critic", Usage(1000, 100, 800), cost=0.002)
+    b.add_usage("critic", Usage(500, 50, 0), cost=0.001)
+    b.add_usage("observability", Usage(200, 20, 100), cost=0.0005)
+    assert b.cached_tokens == 900 and b.input_tokens == 1700 and b.llm_calls == 3
+    critic = b.by_role["critic"]
+    assert (critic.calls, critic.input_tokens, critic.output_tokens, critic.cached_tokens) == (2, 1500, 150, 800)
+    assert abs(critic.cost_usd - 0.003) < 1e-12

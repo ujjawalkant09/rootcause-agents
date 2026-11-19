@@ -145,3 +145,24 @@ def test_tool_schemas_are_openai_functions(store, scenario):
     assert "service" in schemas[0]["function"]["parameters"]["properties"]
     with pytest.raises(KeyError):
         ex.tool_schemas(["nope"])
+
+
+async def test_llm_payload_is_compact_but_ledger_keeps_full_data(store, scenario):
+    import json
+
+    from rootcause_agents.tools.executor import result_for_llm
+
+    ex = make_executor(store, scenario)
+    res, ev = await ex.execute("query_metrics", {"service": "payments", "metric": "latency_p99"}, "obs", 1)
+    payload = json.loads(result_for_llm(res, ev))
+    assert "series" not in payload["data"]  # raw-ish series stays in the ledger only
+    assert payload["data"]["change"] and payload["data"]["stats"]
+    assert "series" in ev.data
+    full = len(json.dumps(res.data, default=str))
+    assert len(json.dumps(payload["data"], default=str)) < full * 0.6
+
+    res, ev = await ex.execute("query_logs", {"service": "payments", "level": "ERROR"}, "obs", 1)
+    payload = json.loads(result_for_llm(res, ev))
+    assert all(len(c["sample_lines"]) <= 1 for c in payload["data"]["clusters"])
+    assert payload["data"]["clusters"][0]["count"] > 100
+    assert len(ev.data["clusters"][0]["sample_lines"]) >= 2

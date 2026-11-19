@@ -10,9 +10,10 @@
 | ADR-6 | MVP scope | 10 scenarios, 1 run each, code-only grounding metrics | Fast, reproducible evaluation. Repeats and an LLM-judge are roadmap items |
 | ADR-7 | Outcome decision | Deterministic policy in code, not by the LLM | Prevents over-confident conclusions and makes outcomes auditable |
 | ADR-8 | Testing | Test-driven development with a scripted LLM | The whole pipeline is testable offline and for free |
+| ADR-9 | LLM resilience | Fallback chain (models → second provider) + circuit breaker, implemented in `llm.py` | Provider outages and rate limits must degrade cost or quality, not fail the investigation |
+| ADR-10 | Cost control | Prompt-cache-friendly prefixes + `prompt_cache_key`, cached-token pricing, compact tool payloads | Cached input costs 5% of the normal price, and compact payloads cut tool-result size by 49% |
 
 ## Roadmap items
-- Model and provider fallback chains with a circuit breaker.
-- OpenAI prompt-cache-friendly prompt layout, plus cached-token cost tracking.
-- An optional on-disk LLM response cache for development.
-- Slimmer tool payloads to the model, and per-agent token breakdown in the evaluation.
+- An optional on-disk LLM response cache for development reruns (accounting must exclude cache hits).
+- Prompt deltas in later rounds (send only new evidence + current hypotheses).
+- Repeated evaluation runs and an LLM-judge for semantic grounding.

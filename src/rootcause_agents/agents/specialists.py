@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from langchain_core.messages import HumanMessage
 
-from rootcause_agents.agents.common import fmt_incident, fmt_services, load_prompt
+from rootcause_agents.agents.common import fmt_incident, load_prompt, system_prompt
 from rootcause_agents.agents.tool_loop import run_tool_loop
 from rootcause_agents.context import RunContext
 from rootcause_agents.schemas import Claim, Evidence, SpecialistFindings, Task
@@ -34,12 +34,11 @@ def _clean_findings(f: SpecialistFindings, known: set[str]) -> SpecialistFinding
 async def run_specialist(ctx: RunContext, agent: str, task: Task, round_: int) -> SpecialistOutput:
     user = "\n\n".join([
         fmt_incident(ctx.incident),
-        fmt_services(ctx),
         f"Round: {round_}",
         f"YOUR TASK: {task.objective}\nFocus services: {', '.join(task.services)}"
         + (f"\nWhy: {task.rationale}" if task.rationale else ""),
     ])
-    loop = await run_tool_loop(ctx, agent, load_prompt(agent), user, SPECIALIST_TOOLS[agent], round_,
+    loop = await run_tool_loop(ctx, agent, system_prompt(ctx, agent), user, SPECIALIST_TOOLS[agent], round_,
                                max_turns=ctx.budget.budget.max_tool_turns_per_agent)
     out = SpecialistOutput(evidence=loop.evidence)
     if loop.stopped_reason != "final":

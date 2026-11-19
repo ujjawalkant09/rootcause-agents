@@ -15,18 +15,24 @@ ROLES_MAS = ["orchestrator", "observability", "dependency", "reasoning", "critic
 WORKER_ROLES = {"observability", "dependency"}
 SYSTEMS = ("mas", "mas-cheap", "single")
 
-# USD per 1M tokens (input, output) – OpenAI pricing page, checked 2026-11-19.
-PRICING: dict[str, tuple[float, float]] = {
-    "gpt-6.2-astra": (8.00, 40.00),
-    "gpt-6.2-sol": (2.00, 10.00),
-    "gpt-6.1-terra": (1.00, 5.00),
-    "gpt-6-luna": (0.10, 0.50),
+# USD per 1M tokens (input, cached input, output) – OpenAI pricing page, checked 2026-11-19.
+PRICING: dict[str, tuple[float, float, float]] = {
+    "gpt-6.2-astra": (8.00, 0.40, 40.00),
+    "gpt-6.2-sol": (2.00, 0.10, 10.00),
+    "gpt-6.1-terra": (1.00, 0.05, 5.00),
+    "gpt-6-luna": (0.10, 0.01, 0.50),
 }
 
 
-def cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
-    pin, pout = PRICING.get(model, (0.0, 0.0))
-    return round(input_tokens / 1e6 * pin + output_tokens / 1e6 * pout, 6)
+def cost_usd(model: str, input_tokens: int, output_tokens: int, cached_tokens: int = 0) -> float:
+    """Cost of one call; ``cached_tokens`` is the subset of ``input_tokens`` served from the prompt cache."""
+    pin, pcached, pout = PRICING.get(model, (0.0, 0.0, 0.0))
+    cached = min(cached_tokens, input_tokens)
+    return round((input_tokens - cached) / 1e6 * pin + cached / 1e6 * pcached + output_tokens / 1e6 * pout, 6)
+
+
+def _csv(value: str | None) -> list[str]:
+    return [v.strip() for v in (value or "").split(",") if v.strip()]
 
 
 class Settings(BaseModel):
@@ -38,6 +44,15 @@ class Settings(BaseModel):
     request_timeout_s: float = 120.0
     llm_max_retries: int = 2
     max_concurrency: int = 4
+    # --- resilience: model fallback chain + optional second OpenAI-compatible provider
+    fallback_models: list[str] = Field(default_factory=list)
+    fallback_base_url: str | None = None
+    fallback_api_key: str | None = None
+    fallback_provider_models: list[str] = Field(default_factory=list)  # default: same model as primary
+    breaker_threshold: int = 3
+    breaker_cooldown_s: float = 60.0
+    # --- cost: OpenAI prompt caching (stable prompt prefixes + per-role prompt_cache_key)
+    prompt_cache: bool = True
     budget: Budget = Field(default_factory=Budget)
     data_dir: Path = ROOT / "data"
     runs_dir: Path = ROOT / "runs"
@@ -57,6 +72,11 @@ class Settings(BaseModel):
             "main_model": env.get("MAIN_MODEL", cls.model_fields["main_model"].default),
             "worker_model": env.get("WORKER_MODEL", cls.model_fields["worker_model"].default),
             "structured_method": env.get("STRUCTURED_METHOD", "json_schema"),
+            "fallback_models": _csv(env.get("FALLBACK_MODELS")),
+            "fallback_base_url": env.get("FALLBACK_BASE_URL") or None,
+            "fallback_api_key": env.get("FALLBACK_API_KEY") or None,
+            "fallback_provider_models": _csv(env.get("FALLBACK_PROVIDER_MODELS")),
+            "prompt_cache": env.get("PROMPT_CACHE", "1") not in ("0", "false", "False"),
         }
         budget = Budget()
         if v := env.get("MAX_TOOL_CALLS"):

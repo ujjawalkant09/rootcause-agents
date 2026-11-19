@@ -1,7 +1,7 @@
 from langchain_core.messages import AIMessage, HumanMessage
 
 from rootcause_agents.config import Settings, cost_usd
-from rootcause_agents.llm import OpenAILLM, ScriptedLLM, usage_from_message
+from rootcause_agents.llm import OpenAILLM, ScriptedLLM, Usage, usage_from_message
 from rootcause_agents.schemas import CriticVerdict
 
 
@@ -9,7 +9,7 @@ async def test_scripted_structured_and_usage():
     seen = []
     llm = ScriptedLLM(
         structured={"critic": lambda msgs, schema: schema(decision="ACCEPT", issues=[])},
-        on_usage=lambda role, model, i, o: seen.append((role, i, o)),
+        on_usage=lambda role, model, u: seen.append((role, u.input_tokens, u.output_tokens)),
     )
     v = await llm.structured("critic", [HumanMessage("x")], CriticVerdict)
     assert v.decision == "ACCEPT"
@@ -33,8 +33,8 @@ def test_cost_from_pricing_table():
 
 def test_usage_from_message():
     msg = AIMessage(content="x", usage_metadata={"input_tokens": 11, "output_tokens": 7, "total_tokens": 18})
-    assert usage_from_message(msg) == (11, 7)
-    assert usage_from_message(AIMessage(content="x")) == (0, 0)
+    assert usage_from_message(msg) == Usage(11, 7, 0)
+    assert usage_from_message(AIMessage(content="x")) == Usage()
 
 
 def test_models_per_system():

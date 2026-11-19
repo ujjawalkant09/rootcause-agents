@@ -34,7 +34,7 @@ uv run ruff check src tests
 | `src/rootcause_agents/schemas.py` | All Pydantic contracts (Evidence, Hypothesis, CriticVerdict, ToolResult, InvestigationReport, …) |
 | `src/rootcause_agents/sim/` | `scenario.py` (YAML models), `generator.py` (scenario → `TelemetryStore`), `store.py` |
 | `src/rootcause_agents/tools/` | `analytics.py` (log clustering, change points), `faults.py` (FaultInjector), `impl.py` (6 tools), `executor.py` (retry, memoisation, evidence IDs, budget) |
-| `src/rootcause_agents/llm.py` | `LLM` protocol, `OpenAILLM` (ChatOpenAI, usage tracking), `ScriptedLLM` (tests) |
+| `src/rootcause_agents/llm.py` | `LLM` protocol, `OpenAILLM` (fallback chain, circuit breaker, `prompt_cache_key`, cached-token usage), `ScriptedLLM` (tests) |
 | `src/rootcause_agents/context.py` | `RunContext`: store, executor, llm, budget, tracer for one investigation |
 | `src/rootcause_agents/budget.py` | Budget limits, termination and outcome decisions |
 | `src/rootcause_agents/validation.py` | Citation validator (facts must cite existing evidence) |
@@ -49,6 +49,8 @@ uv run ruff check src tests
 | `data/topology.yaml`, `data/history/incidents.yaml`, `data/scenarios/*.yaml` | Synthetic environment + test incidents |
 
 ## Key design invariants
+- **Prompt-cache friendly prompts**: system message = `agents.common.system_prompt(ctx, role)` (instructions + static environment only). Never put incident-specific or time-varying content in it; `tests/test_prompt_cache.py` enforces this.
+- **Token diet**: tool results go to the model through `tools.executor.compact_data`. The full data stays in the ledger.
 - **Evidence ledger**: every successful tool call → `Evidence` with a code-assigned ID (`E-<n>`). Hypotheses and claims cite IDs, and `validation.py` rejects unknown IDs. Claims without evidence must be `kind="assumption"`.
 - **The outcome is decided by code** (`budget.decide_outcome`), not by the LLM: ACCEPT + top ≥0.75 + margin ≥0.2 → ROOT_CAUSE_IDENTIFIED; ACCEPT otherwise → PROBABLE; INCONCLUSIVE verdict, or limits reached with top <0.5 → INCONCLUSIVE.
 - **Critic loop**: NEED_MORE_EVIDENCE loops back to the orchestrator only if round < max_rounds, the budget is OK and the last round added new evidence.

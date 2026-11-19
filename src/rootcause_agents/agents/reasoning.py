@@ -10,7 +10,7 @@ from rootcause_agents.agents.common import (
     fmt_gaps,
     fmt_incident,
     fmt_verdicts,
-    load_prompt,
+    system_prompt,
 )
 from rootcause_agents.context import RunContext
 from rootcause_agents.schemas import CriticVerdict, Evidence, Hypothesis, HypothesisSet, SpecialistFindings
@@ -30,7 +30,7 @@ async def reason(ctx: RunContext, evidence: list[Evidence], findings: list[Speci
         fmt_verdicts(verdicts),
         "Produce the ranked competing hypotheses now. Address every issue raised in previous critiques.",
     ])
-    messages: list[BaseMessage] = [SystemMessage(load_prompt("reasoning")), HumanMessage(user)]
+    messages: list[BaseMessage] = [SystemMessage(system_prompt(ctx, "reasoning")), HumanMessage(user)]
     retries = ctx.budget.budget.max_reasoning_retries
     result: HypothesisSet | None = None
     for attempt in range(retries + 1):

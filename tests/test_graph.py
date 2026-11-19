@@ -42,6 +42,11 @@ async def test_happy_path_single_round(tmp_path):
     assert {"observability", "dependency"} <= collectors
     assert report.stats.tool_calls >= 3 and report.stats.llm_calls > 0
     assert report.stats.input_tokens > 0
+    roles = {r.role: r for r in report.stats.by_role}
+    assert {"orchestrator", "observability", "dependency", "reasoning", "critic", "reporter"} <= set(roles)
+    assert sum(r.input_tokens for r in roles.values()) == report.stats.input_tokens
+    assert report.stats.cached_input_tokens == 0
+    assert "Token usage by agent" in (tmp_path / "report.md").read_text()
     # history tool is unavailable in this scenario -> recorded as a data gap, run continues
     assert any("search_incident_history" in g for g in report.data_gaps)
     assert (tmp_path / "report.json").exists() and (tmp_path / "report.md").exists()

@@ -98,6 +98,10 @@ def grade(r: InvestigationReport, sc: Scenario) -> dict[str, Any]:
         "rounds": s.rounds, "tool_calls": s.tool_calls, "tool_errors": s.tool_errors, "llm_calls": s.llm_calls,
         "input_tokens": s.input_tokens, "output_tokens": s.output_tokens, "cost_usd": s.cost_usd,
         "latency_s": s.latency_s, "degraded_nodes": len(s.degraded_nodes), "error": None,
+        "cached_input_tokens": s.cached_input_tokens,
+        "cache_hit_rate": round(s.cached_input_tokens / s.input_tokens, 4) if s.input_tokens else 0.0,
+        "llm_fallbacks": s.llm_fallbacks,
+        "tokens_by_role": {u.role: u.input_tokens + u.output_tokens for u in s.by_role},
     }
 
 
@@ -117,6 +121,8 @@ METRICS = [
     ("output_tokens", "output_tokens", "Output tokens (mean)"),
     ("cost_usd", "cost_usd", "Cost per run ($)"),
     ("latency_s", "latency_s", "Latency (s, mean)"),
+    ("cache_hit_rate", "cache_hit_rate", "Cache hit rate (cached/input)"),
+    ("llm_fallbacks", "llm_fallbacks", "Model fallbacks (mean)"),
 ]
 
 
@@ -148,6 +154,16 @@ def render_summary(rows: list[dict[str, Any]]) -> str:
     for key, _, label in [*METRICS, ("cost_per_correct_usd", None, "Cost per correct diagnosis ($)"), ("errors", None, "Crashed runs")]:
         lines.append(f"| {label} | " + " | ".join(f"{agg[s][key]:.4g}" for s in systems) + " |")
     # by adversarial trait
+    # where do the tokens go? (mean tokens per run, by agent role)
+    roles = sorted({role for r in rows if r.get("error") is None for role in r.get("tokens_by_role", {})})
+    lines += ["\n## Tokens by agent (mean per run)\n", "| Agent | " + " | ".join(systems) + " |",
+              "|---|" + "---|" * len(systems)]
+    for role in roles:
+        cells = []
+        for s in systems:
+            rs = [r for r in rows if r["system"] == s and r.get("error") is None]
+            cells.append(f"{_mean([float(r.get('tokens_by_role', {}).get(role, 0)) for r in rs]):.0f}")
+        lines.append(f"| {role} | " + " | ".join(cells) + " |")
     lines += ["\n## Top-1 accuracy by scenario trait\n", "| Trait | " + " | ".join(systems) + " |",
               "|---|" + "---|" * len(systems)]
     traits = sorted({t for r in rows for t in r.get("traits", [])})
@@ -218,7 +234,7 @@ async def run_matrix(
     (out_dir / "summary.md").write_text(render_summary(rows))
     ok = [r for r in rows if r.get("error") is None]
     if ok:
-        fields = [k for k in ok[0] if k not in ("traits", "expected_outcomes")]
+        fields = [k for k in ok[0] if k not in ("traits", "expected_outcomes", "tokens_by_role")]
         with (out_dir / "summary.csv").open("w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
             w.writeheader()

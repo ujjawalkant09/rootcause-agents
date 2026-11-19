@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from pydantic import BaseModel
 
-from rootcause_agents.schemas import CriticVerdict, Hypothesis, Outcome
+from rootcause_agents.schemas import CriticVerdict, Hypothesis, Outcome, RoleUsage
 
 IDENTIFIED_MIN_CONFIDENCE = 0.75
 IDENTIFIED_MIN_MARGIN = 0.20
@@ -33,14 +34,24 @@ class BudgetTracker:
         self.input_tokens = 0
         self.output_tokens = 0
         self.llm_calls = 0
+        self.cached_tokens = 0
         self.cost_usd = 0.0
+        self.by_role: dict[str, RoleUsage] = {}
 
     # -- accounting
-    def add_tokens(self, input_tokens: int, output_tokens: int, cost: float = 0.0) -> None:
+    def add_usage(self, role: str, usage: Any, cost: float = 0.0) -> None:
+        """``usage`` has input_tokens / output_tokens / cached_tokens (see llm.Usage)."""
         self.llm_calls += 1
-        self.input_tokens += input_tokens
-        self.output_tokens += output_tokens
+        self.input_tokens += usage.input_tokens
+        self.output_tokens += usage.output_tokens
+        self.cached_tokens += usage.cached_tokens
         self.cost_usd += cost
+        r = self.by_role.setdefault(role, RoleUsage(role=role))
+        r.calls += 1
+        r.input_tokens += usage.input_tokens
+        r.output_tokens += usage.output_tokens
+        r.cached_tokens += usage.cached_tokens
+        r.cost_usd = round(r.cost_usd + cost, 6)
 
     @property
     def total_tokens(self) -> int:

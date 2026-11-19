@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from langchain_core.messages import HumanMessage
 
-from rootcause_agents.agents.common import fmt_incident, fmt_services, load_prompt
+from rootcause_agents.agents.common import fmt_incident, load_prompt, system_prompt
 from rootcause_agents.agents.reasoning import renumber
 from rootcause_agents.agents.reporter import assemble, fallback_draft
 from rootcause_agents.agents.tool_loop import run_tool_loop
@@ -19,8 +19,8 @@ async def run_single(ctx: RunContext) -> InvestigationReport:
     b = ctx.budget.budget
     # Same total tool-turn allowance the MAS specialists get across rounds.
     max_turns = b.max_tool_turns_per_agent * b.max_rounds
-    user = "\n\n".join([fmt_incident(ctx.incident), fmt_services(ctx), "Round: 1"])
-    loop = await run_tool_loop(ctx, "single", load_prompt("single_agent"), user, list(TOOLS), round_=1,
+    user = "\n\n".join([fmt_incident(ctx.incident), "Round: 1"])
+    loop = await run_tool_loop(ctx, "single", system_prompt(ctx, "single_agent"), user, list(TOOLS), round_=1,
                                max_turns=max_turns)
     evidence = list(ctx.executor.evidence.values())
     known = {e.id for e in evidence}

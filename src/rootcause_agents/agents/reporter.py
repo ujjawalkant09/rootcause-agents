@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from rootcause_agents.agents.common import fmt_evidence, fmt_gaps, fmt_hypotheses, fmt_incident, load_prompt
+from rootcause_agents.agents.common import fmt_evidence, fmt_gaps, fmt_hypotheses, fmt_incident, system_prompt
 from rootcause_agents.context import RunContext
 from rootcause_agents.schemas import (
     Claim,
@@ -40,7 +40,7 @@ async def write_report(ctx: RunContext, outcome: Outcome, hyps: list[Hypothesis]
         f"CRITIC: {verdict.decision if verdict else 'n/a'}; issues: {'; '.join(verdict.issues) if verdict else ''}",
     ])
     try:
-        draft = await ctx.llm.structured("reporter", [SystemMessage(load_prompt("reporter")), HumanMessage(user)],
+        draft = await ctx.llm.structured("reporter", [SystemMessage(system_prompt(ctx, "reporter")), HumanMessage(user)],
                                          ReportDraft)
     except Exception as e:
         ctx.tracer.event("node_error", node="reporter", error=f"{type(e).__name__}: {e}")
@@ -56,8 +56,10 @@ def assemble(ctx: RunContext, outcome: Outcome, hyps: list[Hypothesis], draft: R
     stats = RunStats(
         system=ctx.system, rounds=rounds, tool_calls=b.tool_calls, tool_errors=ctx.executor.errors,
         llm_calls=b.llm_calls, input_tokens=b.input_tokens, output_tokens=b.output_tokens,
-        cost_usd=round(b.cost_usd, 6), latency_s=round(b.elapsed(), 2), budget_exhausted=b.exhausted(),
-        degraded_nodes=list(ctx.degraded_nodes),
+        cached_input_tokens=b.cached_tokens, cost_usd=round(b.cost_usd, 6), latency_s=round(b.elapsed(), 2),
+        budget_exhausted=b.exhausted(), degraded_nodes=list(ctx.degraded_nodes),
+        by_role=sorted(b.by_role.values(), key=lambda r: -(r.input_tokens + r.output_tokens)),
+        llm_fallbacks=ctx.tracer.count("llm_fallback"),
     )
     issues = [i for v in verdicts for i in v.issues]
     return InvestigationReport(

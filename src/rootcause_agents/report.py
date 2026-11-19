@@ -17,7 +17,8 @@ def render_markdown(r: InvestigationReport) -> str:
     out = [
         f"# Incident investigation – {r.incident_id}\n",
         f"**System:** `{r.system}` · **Outcome:** **{r.outcome}** · rounds {s.rounds} · tool calls {s.tool_calls} "
-        f"({s.tool_errors} errors) · LLM calls {s.llm_calls} · tokens {s.input_tokens}+{s.output_tokens} · "
+        f"({s.tool_errors} errors) · LLM calls {s.llm_calls} · tokens {s.input_tokens}+{s.output_tokens} "
+        f"({s.cached_input_tokens} cached) · "
         f"${s.cost_usd:.4f} · {s.latency_s:.1f}s\n",
         f"## Summary\n{r.summary}\n",
         "## Ranked hypotheses\n",
@@ -43,6 +44,13 @@ def render_markdown(r: InvestigationReport) -> str:
     out.append("\n## Evidence ledger\n| ID | Tool | Status | Summary |\n|---|---|---|---|\n")
     for e in r.evidence:
         out.append(f"| {e.id} | {e.source_tool} | {e.status} | {e.summary.replace('|', '/')} |\n")
+    if s.by_role:
+        out.append("\n## Token usage by agent\n| Agent | Calls | Input | Cached | Output | Cost ($) |\n|---|---|---|---|---|---|\n")
+        for u in s.by_role:
+            out.append(f"| {u.role} | {u.calls} | {u.input_tokens} | {u.cached_tokens} | {u.output_tokens} | "
+                       f"{u.cost_usd:.4f} |\n")
+        if s.llm_fallbacks:
+            out.append(f"\nModel fallbacks used: {s.llm_fallbacks}\n")
     if s.degraded_nodes:
         out.append("\n**Degraded nodes:** " + ", ".join(s.degraded_nodes) + "\n")
     return "".join(out)

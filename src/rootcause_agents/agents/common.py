@@ -16,6 +16,15 @@ def load_prompt(name: str) -> str:
     return (PROMPTS / f"{name}.md").read_text()
 
 
+def system_prompt(ctx: RunContext, name: str) -> str:
+    """Stable, cacheable prefix: role instructions + static environment context (never incident-specific).
+
+    OpenAI caches identical prompt prefixes, so everything that does not change between calls/incidents goes
+    here, and all dynamic content (incident, evidence, critiques) goes in the user message after it.
+    """
+    return f"{load_prompt(name)}\n\n## Environment\n{fmt_services(ctx)}"
+
+
 def fmt_incident(inc: IncidentReport) -> str:
     return (f"INCIDENT {inc.id}: {inc.title}\nReported at: {inc.reported_at.isoformat()}\n"
             f"Description: {inc.description}\nAffected services: {', '.join(inc.affected_services)}\n"

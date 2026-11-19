@@ -174,6 +174,15 @@ LLM_OUTPUT_MODELS: list[type[BaseModel]] = [
 
 
 # --------------------------------------------------------------------------- final report
+class RoleUsage(_Strict):
+    role: str
+    calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_tokens: int = 0
+    cost_usd: float = 0.0
+
+
 class RunStats(_Strict):
     system: str
     rounds: int = 0
@@ -182,10 +191,13 @@ class RunStats(_Strict):
     llm_calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    cached_input_tokens: int = 0
     cost_usd: float = 0.0
     latency_s: float = 0.0
     budget_exhausted: bool = False
     degraded_nodes: list[str] = []
+    by_role: list[RoleUsage] = []
+    llm_fallbacks: int = 0
 
 
 class InvestigationReport(_Strict):

@@ -8,6 +8,7 @@
 - 6 cooperating agents (Orchestrator, Observability, Dependency, Reasoning, Critic, Reporter) on a LangGraph state machine with parallel fan-out and a bounded critic feedback loop
 - An evidence ledger where every claim cites a tool-result ID, enforced by code, so facts are separated from assumptions
 - Fault-tolerant tooling: retries with backoff, memoisation, budgets, graceful degradation, and fault injection (timeouts, partial or stale data)
+- LLM resilience and cost control: a model and provider fallback chain with a circuit breaker, OpenAI prompt caching with cached-token cost accounting, and compact tool payloads (49% smaller)
 - An evaluation harness that compares the multi-agent system with a single-agent baseline on accuracy, grounding, tool calls, tokens, cost and latency
 - Built test-first: 100+ offline tests using a scripted LLM, plus CI
 
@@ -61,6 +62,19 @@ START → Orchestrator ─Send()→ ┌ Observability (logs, metrics)        ┐
   - Node-level retry, then graceful degradation (a failed agent becomes a recorded data gap).
   - Deterministic fallbacks for the plan and the report.
   - `recursion_limit` as a final safety net.
+- **LLM fallback chain** (`llm.py`): primary model → `FALLBACK_MODELS` → an optional second OpenAI-compatible provider (`FALLBACK_BASE_URL`).
+  - It switches on provider errors, timeouts or unparseable structured output.
+  - A circuit breaker skips an endpoint after repeated failures, then tries it again after a cooldown.
+  - Every fallback is traced and counted in the report.
+- **Prompt caching**:
+  - Each agent's system message is a stable prefix (role instructions plus the static environment), and all incident-specific content comes after it.
+  - Tool loops only ever append messages, so later turns reuse the cached prefix.
+  - Each role sends a `prompt_cache_key`.
+  - Cached tokens are read from the API response and priced at the cached rate (5% of the normal input price for `gpt-6.2-sol`).
+- **Token diet**:
+  - Tools return error clusters and change points, never raw logs.
+  - The model receives a compact version of each tool result (no metric series, one sample line per log cluster). That is 49% fewer characters across all scenarios, while the full data stays in the evidence ledger.
+  - Per-agent token and cost breakdown appears in every report and in the evaluation summary.
 - **Smart tools**: logs come back as error-signature clusters and metrics as change-point onsets and magnitudes, never as raw dumps. This keeps tokens low and signal high.
 - **Fault injection** (declared per scenario, seeded): timeouts, unavailable backends, rate limits, partial shards, stale metrics, empty results.
 
@@ -72,7 +86,7 @@ Metrics (computed from reports and traces):
 - top-1 and top-3 root-cause accuracy, outcome correctness, confident-wrong rate
 - citation validity, claim coverage, key-evidence recall
 - Brier score
-- rounds, tool calls, LLM calls, tokens, cost (USD from the pricing table) and latency
+- rounds, tool calls, LLM calls, tokens (including cache hit rate and per-agent breakdown), cost (USD, cached-token aware) and latency
 
 Results go to `eval/results/summary.md`, plus per-run reports and traces under `eval/results/runs/`.
 

@@ -12,7 +12,7 @@ from rootcause_agents.budget import BudgetTracker
 from rootcause_agents.config import SYSTEMS, Settings, cost_usd
 from rootcause_agents.context import RunContext
 from rootcause_agents.graph import build_graph
-from rootcause_agents.llm import LLM, OpenAILLM
+from rootcause_agents.llm import LLM, OpenAILLM, Usage
 from rootcause_agents.report import render_markdown
 from rootcause_agents.schemas import InvestigationReport
 from rootcause_agents.sim.generator import generate
@@ -60,15 +60,16 @@ async def investigate(
     tracer = Tracer(out_dir / "trace.jsonl", echo=echo)
     budget = BudgetTracker(settings.budget.model_copy())
 
-    def on_usage(role: str, model: str, i: int, o: int) -> None:
-        c = cost_usd(model, i, o)
-        budget.add_tokens(i, o, c)
-        tracer.event("llm_call", role=role, model=model, input_tokens=i, output_tokens=o, cost_usd=c)
+    def on_usage(role: str, model: str, u: Usage) -> None:
+        c = cost_usd(model, u.input_tokens, u.output_tokens, u.cached_tokens)
+        budget.add_usage(role, u, c)
+        tracer.event("llm_call", role=role, model=model, input_tokens=u.input_tokens, output_tokens=u.output_tokens,
+                     cached_tokens=u.cached_tokens, cost_usd=c)
 
     if llm is None:
         if not settings.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is not set (add it to .env)")
-        llm = OpenAILLM(settings, settings.models_for(system), on_usage=on_usage)
+        llm = OpenAILLM(settings, settings.models_for(system), on_usage=on_usage, on_event=tracer.event)
     elif hasattr(llm, "on_usage"):
         llm.on_usage = on_usage  # type: ignore[attr-defined]
 

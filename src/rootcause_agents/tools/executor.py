@@ -128,13 +128,30 @@ def _fmt(params: dict[str, Any]) -> str:
     return ", ".join(f"{k}={v}" for k, v in params.items())
 
 
+def compact_data(tool: str, data: Any) -> Any:
+    """Token diet: what the model needs to reason, not everything the ledger stores.
+
+    - metrics: drop the downsampled series (stats + detected change point carry the signal)
+    - logs: keep one sample line per cluster and drop window echo
+    Full data stays in the Evidence ledger (report, grader, later queries).
+    """
+    if not isinstance(data, dict):
+        return data
+    if tool == "query_metrics":
+        return {k: v for k, v in data.items() if k not in ("series", "window", "completeness_points")}
+    if tool == "query_logs":
+        clusters = [{**c, "sample_lines": c.get("sample_lines", [])[:1]} for c in data.get("clusters", [])]
+        return {"total_by_level": data.get("total_by_level"), "clusters": clusters}
+    return data
+
+
 def result_for_llm(result: ToolResult, evidence: Evidence | None) -> str:
     """Compact JSON payload handed back to the model as the tool message content."""
     payload: dict[str, Any] = {"status": result.status}
     if evidence is not None:
         payload["evidence_id"] = evidence.id
         payload["summary"] = evidence.summary
-        payload["data"] = result.data
+        payload["data"] = compact_data(result.tool, result.data)
     if result.warnings:
         payload["warnings"] = result.warnings
     if result.completeness < 1:

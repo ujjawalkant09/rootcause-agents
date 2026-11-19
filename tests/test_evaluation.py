@@ -80,6 +80,8 @@ async def test_run_matrix_and_summary(tmp_path):
     assert len(lines) == 2 and json.loads(lines[0])["scenario_id"] == "T01"
     md = (tmp_path / "summary.md").read_text()
     assert "Top-1 accuracy" in md and "mas" in md and "single" in md
+    assert "Tokens by agent" in md and "Cache hit rate" in md
+    assert all("cache_hit_rate" in r and "tokens_by_role" in r for r in rows)
     assert (tmp_path / "summary.csv").exists()
     agg = summarize(rows)
     assert agg["mas"]["n"] == 1 and agg["mas"]["top1_accuracy"] == 1.0
