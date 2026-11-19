@@ -49,7 +49,8 @@ async def open_checkpointer(settings: Settings) -> AsyncIterator[Any]:
 
 
 # ---------------------------------------------------------------- session registry
-FIELDS = ("status", "system", "scenario_id", "title", "question", "outcome", "out_dir", "trace_url", "cost_usd")
+FIELDS = ("status", "system", "scenario_id", "title", "question", "outcome", "out_dir", "trace_url", "cost_usd",
+          "error")
 
 
 class InMemorySessionRegistry:
@@ -64,7 +65,7 @@ class InMemorySessionRegistry:
 
     async def aupsert(self, thread_id: str, **fields: Any) -> None:
         now = datetime.now(UTC).isoformat()
-        row = self._rows.setdefault(thread_id, {"thread_id": thread_id, "created_at": now})
+        row = self._rows.setdefault(thread_id, {"thread_id": thread_id, "created_at": now, "error": None})
         row.update({k: v for k, v in fields.items() if k in FIELDS}, updated_at=now)
 
     async def alist(self, limit: int = 50) -> list[dict[str, Any]]:
@@ -85,6 +86,7 @@ CREATE TABLE IF NOT EXISTS rootcause_sessions (
     out_dir     TEXT,
     trace_url   TEXT,
     cost_usd    DOUBLE PRECISION,
+    error       TEXT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 )"""
@@ -96,6 +98,7 @@ class PostgresSessionRegistry:
 
     async def setup(self) -> None:
         await self.conn.execute(DDL)
+        await self.conn.execute("ALTER TABLE rootcause_sessions ADD COLUMN IF NOT EXISTS error TEXT")
 
     async def aget(self, thread_id: str) -> dict[str, Any] | None:
         cur = await self.conn.execute("SELECT * FROM rootcause_sessions WHERE thread_id = %s", (thread_id,))

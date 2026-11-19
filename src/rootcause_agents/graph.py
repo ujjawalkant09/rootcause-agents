@@ -202,8 +202,10 @@ def build_graph(ctx: RunContext, hitl: str = "off", checkpointer: Any = None):
         reason = "review" if v.decision == "ACCEPT" else "stuck"
         question = ("Please review the conclusion before the report is written. Approve it, or add context and "
                     "ask for another round." if reason == "review" else
-                    f"The investigation is stuck (critic: {v.decision}). Do you know anything that could help, e.g. a "
-                    "recent change or a suspicious service? Add a hint for another round, or write the report now.")
+                    ("The critic thinks the evidence is not enough to name a root cause yet. "
+                     if v.decision == "INCONCLUSIVE" else "The agents need more evidence but have used their rounds. ")
+                    + "Do you know anything that could help, such as a recent change or a suspicious service? Add a "
+                    "hint for another round, or write the report now.")
         payload = {"reason": reason, "question": question, "round": state["round"], "critic_decision": v.decision,
                    "critic_issues": list(v.issues),
                    "evidence_requests": [r.question for r in v.evidence_requests],

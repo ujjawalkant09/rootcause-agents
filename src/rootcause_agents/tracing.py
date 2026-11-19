@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 class Tracer:
@@ -28,7 +31,10 @@ class Tracer:
             with self.path.open("a") as f:
                 f.write(json.dumps(ev, default=str) + "\n")
         if self.echo:
-            self.echo(ev)
+            try:  # the echo is a display side channel (CLI/UI); it must never break an investigation
+                self.echo(ev)
+            except Exception as e:
+                log.warning("trace echo failed for %s: %s", kind, e)
 
     def count(self, kind: str) -> int:
         return sum(1 for e in self.events if e["event"] == kind)

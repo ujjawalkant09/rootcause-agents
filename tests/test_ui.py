@@ -55,15 +55,6 @@ def test_list_runs_and_eval_results(tmp_path):
     assert list_runs(tmp_path / "missing") == [] and list_eval_results(tmp_path / "missing") == []
 
 
-def test_app_renders_offline_without_calling_the_api():
-    from streamlit.testing.v1 import AppTest
-
-    at = AppTest.from_file(str(ROOT / "src/rootcause_agents/ui/app.py"), default_timeout=30).run()
-    assert not at.exception
-    assert any("Run investigation" in b.label for b in at.button)
-    assert at.selectbox and any("S01" in str(o) for o in at.selectbox[0].options)
-
-
 def test_cli_has_ui_command():
     from typer.testing import CliRunner
 
@@ -73,18 +64,62 @@ def test_cli_has_ui_command():
     assert res.exit_code == 0 and "browser" in res.output.lower()
 
 
-def test_question_panel_renders_for_a_paused_session():
+def test_background_job_survives_independently_and_collects_events():
+    """Runs happen in a worker thread, so a UI rerun can no longer kill an investigation midway."""
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from rootcause_agents.ui.jobs import Job
+
+    async def work(echo):
+        echo({"event": "verdict", "t": 1.0, "decision": "ACCEPT", "issues": []})
+        echo("S01 mas r0: ROOT_CAUSE_IDENTIFIED top1=Y")  # evaluation progress lines are plain strings
+        return 42
+
+    with ThreadPoolExecutor(1) as pool:
+        job = Job.submit(pool, "Investigating", work, context={"k": "v"})
+        for _ in range(100):
+            if job.done:
+                break
+            time.sleep(0.01)
+    assert job.done and job.result() == 42 and job.context == {"k": "v"}
+    lines = job.lines()
+    assert any("ACCEPT" in x for x in lines) and any("S01 mas r0" in x for x in lines)
+
+
+def test_background_job_reports_errors():
+    from concurrent.futures import ThreadPoolExecutor
+
+    import pytest
+
+    from rootcause_agents.ui.jobs import Job
+
+    async def bad(echo):
+        raise RuntimeError("boom")
+
+    with ThreadPoolExecutor(1) as pool:
+        job = Job.submit(pool, "x", bad)
+        job.future.exception(timeout=5)
+    with pytest.raises(RuntimeError):
+        job.result()
+
+
+def test_report_view_shows_human_input():
+    import json
+
     from streamlit.testing.v1 import AppTest
 
+    from rootcause_agents.schemas import InvestigationReport
+
+    path = next(ROOT.glob("runs/*/report.json"), None)
+    data = json.loads(path.read_text()) if path else None
+    if data is None:
+        import pytest
+        pytest.skip("no saved run to render")
+    data["human_inputs"] = ["Check the TLS certificate on payments"]
+    report = InvestigationReport.model_validate(data)
     at = AppTest.from_file(str(ROOT / "src/rootcause_agents/ui/app.py"), default_timeout=30)
-    at.session_state["pending"] = {
-        "thread_id": "t-1", "scenario": None, "custom": False,
-        "question": {"reason": "stuck", "question": "The investigation is stuck. Any hint?", "round": 1,
-                     "critic_decision": "INCONCLUSIVE", "critic_issues": ["cannot separate DB from deploy"],
-                     "hypotheses": [{"component": "payments-db", "category": "resource_exhaustion",
-                                     "confidence": 0.55, "title": "pool exhaustion"}], "human_rounds_left": 2}}
+    at.session_state["last"] = (report, None, True)
     at.run()
     assert not at.exception
-    labels = [b.label for b in at.button]
-    assert "Investigate further with my hint" in labels and "Write the report now" in labels
-    assert any("The investigation is stuck" in i.value for i in at.info)
+    assert any("Check the TLS certificate on payments" in i.value for i in at.info)

@@ -27,12 +27,12 @@ The design docs are in [`docs/`](docs/README.md) (architecture and coordination 
 
 For **saved sessions and agents that ask you for input**, start the local Postgres once with `docker compose up -d` (Docker Desktop must be running). `DATABASE_URL` in `.env` points to it.
 
-| Tab | What you can do |
+| Page | What you can do |
 |---|---|
-| 🔍 Investigate | Pick one of the 10 test incidents **or write your own ticket** (title, description, symptoms, services), choose `mas` / `mas-cheap` / `single`, click **Run**, watch each agent step live, then read the report (ranked hypotheses, cited facts, assumptions, actions, evidence ledger, cost per agent, Langfuse link) |
-| 📊 Evaluation | Choose systems and incidents, see the estimated cost, set a **hard spend cap**, run the comparison and view the results |
-| 💬 Sessions | Every multi-agent run is a LangGraph thread saved in Postgres. When the agents are stuck they **pause and ask you** (hint, or write the report now); answer immediately or later, even after a restart |
-| 🗂️ Past runs | Re-open any earlier report |
+| **Investigate** | Two steps: *What happened?* (pick one of the 10 sample incidents or describe your own) and *How should we investigate?* (Team of agents · Team (budget) · Single agent, with cost and time shown). Watch a plain-language progress timeline; if the agents get stuck they **ask you in a chat message** (quick replies or a typed hint); then read a result card with tabs for findings, next steps, hypotheses, evidence and cost |
+| **Sessions** | *Waiting for you* (answer the agents), *Stopped* (continue from the last checkpoint), *Finished* (open any report in a side panel) |
+| **Results** | Multi-agent vs single-agent comparison at a glance; run a new evaluation with a spend cap |
+| **Settings** | Connections (OpenAI, Postgres, Langfuse), models and limits |
 
 Custom tickets are investigated against the simulated telemetry of the environment you pick; no real production systems are queried.
 

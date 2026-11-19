@@ -1,0 +1,62 @@
+# RootCause Agents theme: adapted from the Streamlit skill's shadcn-dual template, with a teal brand accent.
+# Light/dark toggle stays available in the app menu.
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+
+[theme]
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "8px"
+buttonRadius = "8px"
+font = "'Inter':https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+codeFontSize = "0.85rem"
+baseFontSize = 15
+headingFontSizes = ["32px", "26px", "21px", "18px", "16px", "14px"]
+headingFontWeights = [650, 600, 600, 600, 600, 600]
+linkUnderline = false
+
+[theme.light]
+primaryColor = "#0B6F7A"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F8F9"
+codeBackgroundColor = "#EEF3F5"
+textColor = "#0F1720"
+linkColor = "#0B6F7A"
+borderColor = "#E1E7EB"
+codeTextColor = "#0F1720"
+grayColor = "#64707D"
+blueColor = "#2563EB"
+greenColor = "#16A34A"
+redColor = "#DC2626"
+yellowColor = "#CA8A04"
+orangeColor = "#EA580C"
+violetColor = "#7C3AED"
+chartCategoricalColors = ["#0B6F7A", "#64707D", "#EA580C", "#2563EB", "#16A34A", "#7C3AED", "#CA8A04"]
+dataframeBorderColor = "#E1E7EB"
+dataframeHeaderBackgroundColor = "#F5F8F9"
+
+[theme.dark]
+primaryColor = "#3FB8C4"
+backgroundColor = "#0D1317"
+secondaryBackgroundColor = "#151D23"
+codeBackgroundColor = "#1C262E"
+textColor = "#E8EEF2"
+linkColor = "#5CCBD6"
+borderColor = "#26323B"
+codeTextColor = "#E8EEF2"
+grayColor = "#98A6B3"
+blueColor = "#60A5FA"
+greenColor = "#4ADE80"
+redColor = "#F87171"
+yellowColor = "#FACC15"
+orangeColor = "#FB923C"
+violetColor = "#A78BFA"
+chartCategoricalColors = ["#3FB8C4", "#98A6B3", "#FB923C", "#60A5FA", "#4ADE80", "#A78BFA", "#FACC15"]
+dataframeBorderColor = "#26323B"
+dataframeHeaderBackgroundColor = "#151D23"
+dataframeHeaderTextColor = "#E8EEF2"

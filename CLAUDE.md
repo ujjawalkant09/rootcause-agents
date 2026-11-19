@@ -49,11 +49,12 @@ uv run ruff check src tests
 | `src/rootcause_agents/cli.py` | Typer CLI (`list`, `investigate`, `eval --max-cost`, `ui`) |
 | `src/rootcause_agents/telemetry.py` | Optional Langfuse tracing: `NoopTelemetry` / `LangfuseTelemetry`, `observe()` typed observations, scores |
 | `src/rootcause_agents/persistence.py` | LangGraph checkpointer (Postgres via `DATABASE_URL`, else in-memory), checkpoint serde allowlist, session registry |
-| `src/rootcause_agents/ui/` | Streamlit UI: `app.py` (page), `view.py` (pure, tested helpers) |
+| `src/rootcause_agents/ui/` | Streamlit UI: `app.py` (top navigation), `app_pages/` (investigate, sessions, results, settings_page), `common.py` (shared widgets: progress timeline, agents' question chat, report view), `jobs.py` (background runs), `view.py` (pure, tested helpers). Theme in `.streamlit/config.toml`; follow the `developing-with-streamlit` skill |
 | `eval/grader.py`, `eval/run_eval.py` | Metrics + comparison of MAS vs MAS-cheap vs single-agent |
 | `data/topology.yaml`, `data/history/incidents.yaml`, `data/scenarios/*.yaml` | Synthetic environment + test incidents |
 
 ## Key design invariants
+- **Runs must survive the UI**: the Streamlit app runs investigations in a worker thread (`ui/jobs.py`), and `Tracer` swallows echo errors. Never call Streamlit from agent code or routing functions. A crash leaves the session `failed`/`interrupted`; `resume_session(thread_id, None)` continues from the last checkpoint (and re-applies the critic's routing if it crashed there).
 - **Human-in-the-loop**: `human_review` node uses `interrupt()`; no side effects before it (the node re-runs on resume). Human hints are leads, never evidence. `resume_session` must rebuild everything from the checkpoint (`meta` + `snapshot` in state). Max 2 questions per run; `investigate()`/eval never pause.
 - **Observability never breaks a run**: all Langfuse calls go through `LangfuseTelemetry._safe`. Callbacks and the agent name are bound on the chat model (not the outer runnable) so each LLM call is one generation without LangChain noise. Observation names are stable (no IDs or rounds in names; those go in metadata).
 - **Per-task tool quota** (`Budget.max_tool_calls_per_task`) keeps budget for critic-driven follow-up rounds.

@@ -15,7 +15,7 @@ from rootcause_agents.persistence import InMemorySessionRegistry, checkpoint_ser
 from rootcause_agents.runner import resume_session, start_session
 from rootcause_agents.schemas import CriticVerdict
 from tests.conftest import FIXTURES
-from tests.helpers import ACCEPT, make_llm
+from tests.helpers import ACCEPT, MORE, make_llm
 
 STUCK = CriticVerdict(decision="INCONCLUSIVE", issues=["cannot tell DB from deploy"])
 
@@ -156,3 +156,91 @@ async def test_postgres_roundtrip_survives_a_new_connection(tmp_path):
                             cp2, reg2)
         assert done.status == "done" and done.report.human_inputs == ["check db"]
         assert (await reg2.aget(first.thread_id))["status"] == "done"
+
+
+class FakeRerun(BaseException):
+    """Mimics Streamlit's script-control exception that kills a run when the user clicks during it."""
+
+
+async def test_interrupted_run_is_marked_and_can_continue_from_its_checkpoint(tmp_path):
+    cp, reg = InMemorySaver(serde=checkpoint_serde()), InMemorySessionRegistry()
+
+    def killer(ev):
+        if ev["event"] == "route":
+            raise FakeRerun()
+
+    with pytest.raises(FakeRerun):
+        await start_session(FIXTURES / "scenario_basic.yaml", "mas", settings=settings(), llm=make_llm(critic=[STUCK]),
+                            topology_path=FIXTURES / "topology.yaml", history_path=None, out_dir=tmp_path,
+                            sleep_scale=0, hitl="stuck", checkpointer=cp, registry=reg, echo=killer)
+    rows = await reg.alist()
+    assert rows[0]["status"] == "interrupted" and "FakeRerun" in rows[0]["error"]
+    tid = rows[0]["thread_id"]
+
+    llm2 = make_llm(critic=[STUCK])
+    res = await resume_session(tid, None, settings=settings(), llm=llm2, topology_path=FIXTURES / "topology.yaml",
+                               history_path=None, checkpointer=cp, registry=reg, sleep_scale=0)
+    # continues from the last checkpoint: only the step that was interrupted (critic) re-runs, then it pauses
+    assert res.status == "waiting" and res.question["reason"] == "stuck"
+    assert [c["role"] for c in llm2.calls] == ["critic"]
+    assert reg.get(tid)["status"] == "waiting" and reg.get(tid)["error"] is None
+
+
+async def test_failed_run_records_the_error(tmp_path, monkeypatch):
+    from rootcause_agents import graph as graph_mod
+
+    cp, reg = InMemorySaver(serde=checkpoint_serde()), InMemorySessionRegistry()
+
+    def boom(*a, **kw):
+        raise RuntimeError("db went away")
+
+    monkeypatch.setattr(graph_mod, "should_continue", boom)  # an error inside the graph itself
+    with pytest.raises(RuntimeError):
+        await start(make_llm(critic=[MORE]), tmp_path, cp, reg)
+    row = (await reg.alist())[0]
+    assert row["status"] == "failed" and "db went away" in row["error"]
+
+
+async def test_answer_is_required_only_for_paused_sessions(tmp_path):
+    cp, reg = InMemorySaver(serde=checkpoint_serde()), InMemorySessionRegistry()
+    first = await start(make_llm(critic=[STUCK]), tmp_path, cp, reg)
+    with pytest.raises(ValueError, match="waiting for an answer"):
+        await resume(make_llm(), first.thread_id, None, cp, reg)
+
+
+async def test_crash_in_routing_after_the_critic_is_recovered_on_continue(tmp_path):
+    """Real-world case: the critic's writes were saved but the routing after it crashed, so a plain resume would
+    end the graph with no report. Continue must re-run the routing and reach the human question."""
+    from rootcause_agents.graph import build_graph  # noqa: F401  (documents which graph is exercised)
+    from rootcause_agents.tracing import Tracer
+
+    cp, reg = InMemorySaver(serde=checkpoint_serde()), InMemorySessionRegistry()
+    real_event = Tracer.event
+
+    def crashing_event(self, kind, data=None, **kw):
+        real_event(self, kind, data, **kw)
+        if kind == "route":
+            raise RuntimeError("crash inside routing")
+
+    Tracer.event = crashing_event
+    try:
+        with pytest.raises(RuntimeError):
+            await start(make_llm(critic=[STUCK]), tmp_path, cp, reg)
+    finally:
+        Tracer.event = real_event
+    tid = (await reg.alist())[0]["thread_id"]
+    llm2 = make_llm(critic=[STUCK])
+    res = await resume(llm2, tid, None, cp, reg)
+    assert res.status == "waiting" and res.question["reason"] == "stuck"
+    assert [c["role"] for c in llm2.calls if c["role"] in ("orchestrator", "reasoning")] == []
+
+
+def test_echo_errors_never_break_a_run(tmp_path):
+    from rootcause_agents.tracing import Tracer
+
+    def bad_echo(ev):
+        raise ValueError("ui went away")
+
+    t = Tracer(tmp_path / "t.jsonl", echo=bad_echo)
+    t.event("route", loop=False)  # must not raise
+    assert t.count("route") == 1 and "route" in (tmp_path / "t.jsonl").read_text()
