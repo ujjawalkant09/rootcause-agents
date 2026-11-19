@@ -10,3 +10,6 @@ eval/results/runs/
 # local-only files
 *.pdf
 .DS_Store
+
+# local-only material (never pushed)
+submission/
