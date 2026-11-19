@@ -1,0 +1,30 @@
+id: S03
+seed: 303
+traits: [misleading, tool_failure]
+incident:
+  title: "Checkout latency high with intermittent 5xx"
+  description: "Checkout is slow; some orders fail. A checkout release went out around the same time."
+  reported_at: "2026-03-10T14:20:00Z"
+  affected_services: [checkout]
+  symptoms: ["checkout p99 latency > 5s", "checkout 5xx rate ~8%"]
+ground_truth:
+  root_cause_component: payments-db
+  root_cause_category: resource_exhaustion
+  aliases: ["payments database", "payments db"]
+  expected_outcomes: [ROOT_CAUSE_IDENTIFIED, PROBABLE]
+  key_signals:
+    - {service: payments-db, kind: metric, metric: db_connections}
+    - {service: payments, kind: log}
+signals:
+  - {type: metric_shift, service: payments-db, metric: db_connections, at: -18, to: 100, ramp: 3}
+  - {type: metric_shift, service: payments-db, metric: query_latency_p99, at: -19, factor: 40, ramp: 2}
+  - {type: metric_shift, service: payments-db, metric: lock_wait_ms, at: -19, factor: 60}
+  - {type: metric_shift, service: payments, metric: latency_p99, at: -17, factor: 12}
+  - {type: metric_shift, service: checkout, metric: latency_p99, at: -16, factor: 20}
+  - {type: metric_shift, service: checkout, metric: error_rate, at: -16, to: 0.08}
+  - {type: log_burst, service: payments, level: ERROR, template: "ConnectionPoolTimeout: waited {ms}ms for a payments-db connection", at: -17, rate: 40}
+  - {type: log_burst, service: checkout, level: ERROR, template: "payment authorization timed out after {ms}ms", at: -16, rate: 20}
+deployments:
+  - {id: D-401, service: checkout, version: "v5.15.2", at: -14, author: alice, diff_summary: "Update button copy on order review page", files_changed: ["ui/review.tsx", "i18n/en.json"]}
+faults:
+  - {tool: query_metrics, match: {service: payments-db}, fault: timeout, times: 2}

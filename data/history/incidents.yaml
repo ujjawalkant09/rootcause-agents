@@ -1,0 +1,73 @@
+# Historical incident knowledge base. Some entries are deliberately similar-but-different (misleading priors).
+- id: HIST-001
+  title: "Inventory latency spike after release"
+  services: [inventory, checkout]
+  symptoms: "inventory latency p99 high, request queue full, checkout timeouts, rejected requests"
+  root_cause: "Bad deployment of inventory v4.2 introduced an N+1 query"
+  resolution: "Rolled back inventory to v4.1"
+- id: HIST-002
+  title: "Payments DB connection pool exhausted"
+  services: [payments, payments-db, checkout]
+  symptoms: "checkout latency high, payments ConnectionPoolTimeout errors, db connections at max"
+  root_cause: "Long-running report query held connections in payments-db"
+  resolution: "Killed query, added statement timeout, raised pool size"
+- id: HIST-003
+  title: "Gateway 5xx due to auth outage"
+  services: [api-gateway, auth]
+  symptoms: "api-gateway 5xx, upstream auth timeouts, login failures"
+  root_cause: "auth pods OOM-killed after memory leak in token cache"
+  resolution: "Restarted auth, fixed cache eviction"
+- id: HIST-004
+  title: "Search slow after feature flag rollout"
+  services: [search, api-gateway]
+  symptoms: "search latency high, thread pool saturated, gateway latency"
+  root_cause: "Feature flag enabled expensive fuzzy matching"
+  resolution: "Disabled flag"
+- id: HIST-005
+  title: "Cache hit-rate collapse"
+  services: [cache, user-svc]
+  symptoms: "cache hit rate dropped, user-svc latency high, db load increased"
+  root_cause: "Cache cluster node failure during maintenance"
+  resolution: "Replaced node, warmed cache"
+- id: HIST-006
+  title: "Order events not delivered"
+  services: [queue, notifications, checkout]
+  symptoms: "notifications delayed, consumer lag growing, publish failures"
+  root_cause: "Consumer deployment crash-looping"
+  resolution: "Rolled back notifications consumer"
+- id: HIST-007
+  title: "Checkout errors after deploy"
+  services: [checkout, api-gateway]
+  symptoms: "checkout 5xx, NullPointerException, gateway errors"
+  root_cause: "Null handling bug in checkout release"
+  resolution: "Rolled back checkout"
+- id: HIST-008
+  title: "PSP payments failing"
+  services: [payments, external-psp]
+  symptoms: "payment authorization failures, PSP errors, checkout failures"
+  root_cause: "PSP provider outage"
+  resolution: "Failed over to secondary PSP"
+- id: HIST-009
+  title: "Black Friday traffic saturation"
+  services: [api-gateway, checkout, inventory]
+  symptoms: "traffic 3x normal, thread pools saturated, latency high"
+  root_cause: "Marketing campaign traffic surge without pre-scaling"
+  resolution: "Scaled out inventory and checkout"
+- id: HIST-010
+  title: "User service slow"
+  services: [user-svc, auth, checkout]
+  symptoms: "auth latency, profile fetch timeouts, deadline exceeded"
+  root_cause: "user-db missing index after schema migration"
+  resolution: "Added index"
+- id: HIST-011
+  title: "Retry storm against PSP"
+  services: [payments, external-psp]
+  symptoms: "payments cpu high, retries, PSP rate limiting, checkout latency"
+  root_cause: "Retry policy misconfiguration amplified a transient PSP blip"
+  resolution: "Reduced retries, added jitter and circuit breaker"
+- id: HIST-012
+  title: "Broker disk alarm"
+  services: [queue]
+  symptoms: "broker unavailable, publish failures, no space left"
+  root_cause: "Retention misconfigured; disk filled up"
+  resolution: "Purged old segments, fixed retention"

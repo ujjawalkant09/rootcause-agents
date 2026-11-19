@@ -1,0 +1,31 @@
+id: S09
+seed: 909
+traits: [tool_failure, inconclusive, misleading]
+incident:
+  title: "Login and checkout slow"
+  description: "Logins take long and checkout pages time out intermittently. An auth release went out recently."
+  reported_at: "2026-03-27T09:30:00Z"
+  affected_services: [auth, checkout]
+  symptoms: ["auth p99 latency elevated", "checkout latency elevated", "some login timeouts"]
+ground_truth:
+  root_cause_component: user-svc
+  root_cause_category: dependency_failure
+  alt_categories: [resource_exhaustion, unknown]
+  aliases: ["user-db"]
+  expected_outcomes: [INCONCLUSIVE, PROBABLE]
+  key_signals:
+    - {service: auth, kind: log}
+    - {service: checkout, kind: log}
+signals:
+  - {type: metric_shift, service: user-svc, metric: latency_p99, at: -10, factor: 20}
+  - {type: metric_shift, service: auth, metric: latency_p99, at: -9, factor: 8}
+  - {type: metric_shift, service: checkout, metric: latency_p99, at: -9, factor: 6}
+  - {type: log_burst, service: auth, level: ERROR, template: "downstream call to user-svc failed: deadline exceeded after {ms}ms", at: -9, rate: 30}
+  - {type: log_burst, service: checkout, level: ERROR, template: "user profile fetch timed out after {ms}ms", at: -9, rate: 20}
+deployments:
+  - {id: D-1001, service: auth, version: "v7.3.0", at: -11, author: kim, diff_summary: "Upgrade JWT library to 9.1", files_changed: ["go.mod", "token/jwt.go"]}
+faults:
+  - {tool: query_logs, match: {service: user-svc}, fault: unavailable}
+  - {tool: query_metrics, match: {service: user-svc}, fault: unavailable}
+  - {tool: query_metrics, match: {service: user-db}, fault: unavailable}
+  - {tool: query_logs, match: {service: user-db}, fault: unavailable}

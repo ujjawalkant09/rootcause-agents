@@ -1,0 +1,27 @@
+id: S06
+seed: 606
+traits: [noisy]
+incident:
+  title: "User profile and checkout pages slow"
+  description: "Profile page and checkout are slow for many users. Notifications team also reports email errors."
+  reported_at: "2026-03-18T11:00:00Z"
+  affected_services: [user-svc, checkout]
+  symptoms: ["user-svc p99 latency elevated 6x", "checkout latency elevated", "email delivery errors"]
+ground_truth:
+  root_cause_component: cache
+  root_cause_category: config_change
+  expected_outcomes: [ROOT_CAUSE_IDENTIFIED, PROBABLE]
+  key_signals:
+    - {service: cache, kind: config}
+    - {service: cache, kind: metric, metric: cache_hit_rate}
+    - {service: cache, kind: metric, metric: evictions}
+signals:
+  - {type: metric_shift, service: cache, metric: evictions, at: -29, factor: 40}
+  - {type: metric_shift, service: cache, metric: cache_hit_rate, at: -29, to: 0.35}
+  - {type: metric_shift, service: user-svc, metric: latency_p99, at: -28, factor: 6}
+  - {type: metric_shift, service: user-db, metric: db_connections, at: -28, to: 75}
+  - {type: metric_shift, service: checkout, metric: latency_p99, at: -27, factor: 3}
+  - {type: log_burst, service: user-svc, level: WARN, template: "cache miss for key profile:{id}, falling back to database", at: -28, rate: 40}
+  - {type: log_burst, service: notifications, level: ERROR, template: "SMTP connection refused by relay smtp-{n}", at: -180, rate: 6}
+config_changes:
+  - {id: C-701, service: cache, key: "cache.maxmemory", old: "8gb", new: "2gb", at: -30, actor: infra-bot, source: infra}

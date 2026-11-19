@@ -1,0 +1,37 @@
+# Simulated production topology. Edge "from -> to" means "from depends on / calls to".
+services:
+  cdn: {tier: edge}
+  api-gateway: {tier: edge}
+  auth: {tier: app}
+  user-svc: {tier: app}
+  checkout: {tier: app}
+  payments: {tier: app, metrics: [cert_days_remaining, thread_pool_active]}
+  payments-db: {tier: data, metrics: [db_connections, query_latency_p99, lock_wait_ms, disk_used_pct]}
+  inventory: {tier: app, metrics: [thread_pool_active]}
+  inventory-db: {tier: data, metrics: [db_connections, query_latency_p99]}
+  search: {tier: app, metrics: [thread_pool_active]}
+  cache: {tier: data, metrics: [cache_hit_rate, evictions]}
+  queue: {tier: data, metrics: [queue_depth, consumer_lag, disk_used_pct]}
+  notifications: {tier: app}
+  external-psp: {tier: external}
+  user-db: {tier: data, metrics: [db_connections, query_latency_p99]}
+edges:
+  - {from: cdn, to: api-gateway, type: sync}
+  - {from: api-gateway, to: auth, type: sync}
+  - {from: api-gateway, to: checkout, type: sync}
+  - {from: api-gateway, to: search, type: sync}
+  - {from: api-gateway, to: user-svc, type: sync}
+  - {from: auth, to: user-svc, type: sync}
+  - {from: checkout, to: payments, type: sync}
+  - {from: checkout, to: inventory, type: sync}
+  - {from: checkout, to: user-svc, type: sync}
+  - {from: checkout, to: cache, type: cache}
+  - {from: checkout, to: queue, type: async}
+  - {from: payments, to: payments-db, type: db}
+  - {from: payments, to: external-psp, type: sync}
+  - {from: inventory, to: inventory-db, type: db}
+  - {from: inventory, to: cache, type: cache}
+  - {from: search, to: cache, type: cache}
+  - {from: user-svc, to: cache, type: cache}
+  - {from: user-svc, to: user-db, type: db}
+  - {from: notifications, to: queue, type: async}

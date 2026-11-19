@@ -1,0 +1,29 @@
+id: S05
+seed: 505
+traits: [misleading]
+incident:
+  title: "Inventory requests rejected, checkout timeouts"
+  description: "Checkout reports inventory timeouts; inventory is rejecting requests."
+  reported_at: "2026-03-14T19:10:00Z"
+  affected_services: [inventory, checkout]
+  symptoms: ["inventory p99 latency > 3s", "inventory rejecting requests", "checkout timeouts"]
+ground_truth:
+  root_cause_component: inventory
+  root_cause_category: traffic_surge
+  aliases: ["api-gateway"]
+  expected_outcomes: [ROOT_CAUSE_IDENTIFIED, PROBABLE]
+  key_signals:
+    - {service: inventory, kind: metric, metric: rps}
+    - {service: api-gateway, kind: metric, metric: rps}
+    - {service: inventory, kind: log}
+signals:
+  - {type: metric_shift, service: api-gateway, metric: rps, at: -20, factor: 3.5, ramp: 3}
+  - {type: metric_shift, service: checkout, metric: rps, at: -20, factor: 3.4, ramp: 3}
+  - {type: metric_shift, service: inventory, metric: rps, at: -20, factor: 3.6, ramp: 3}
+  - {type: metric_shift, service: inventory, metric: thread_pool_active, at: -18, to: 200, ramp: 2}
+  - {type: metric_shift, service: inventory, metric: latency_p99, at: -18, factor: 12}
+  - {type: metric_shift, service: inventory-db, metric: db_connections, at: -18, to: 80}
+  - {type: log_burst, service: inventory, level: WARN, template: "request queue full ({n}), rejecting request", at: -18, rate: 35}
+  - {type: log_burst, service: checkout, level: ERROR, template: "inventory reservation timed out after {ms}ms", at: -17, rate: 15}
+deployments:
+  - {id: D-601, service: inventory, version: "v4.9.1", at: -170, author: ci-bot, diff_summary: "Bump logging library", files_changed: ["pom.xml"]}

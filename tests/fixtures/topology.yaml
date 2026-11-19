@@ -1,0 +1,11 @@
+services:
+  api-gateway: {tier: edge}
+  checkout: {tier: app}
+  payments: {tier: app}
+  payments-db: {tier: data, metrics: [db_connections, query_latency_p99, cpu, disk_used_pct]}
+  notifications: {tier: app}
+edges:
+  - {from: api-gateway, to: checkout, type: sync}
+  - {from: checkout, to: payments, type: sync}
+  - {from: payments, to: payments-db, type: db}
+  - {from: checkout, to: notifications, type: async}

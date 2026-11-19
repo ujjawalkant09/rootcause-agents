@@ -1,0 +1,29 @@
+id: T01
+seed: 7
+incident:
+  title: "Checkout latency high"
+  description: "Users report slow checkout and some 5xx."
+  reported_at: "2026-03-10T14:20:00Z"
+  affected_services: [checkout]
+  symptoms: ["checkout p99 latency > 5s", "5xx rate 8%"]
+ground_truth:
+  root_cause_component: payments-db
+  root_cause_category: resource_exhaustion
+  aliases: ["payments database"]
+  expected_outcomes: [ROOT_CAUSE_IDENTIFIED, PROBABLE]
+  key_signals:
+    - {service: payments-db, kind: metric, metric: db_connections}
+    - {service: payments, kind: log}
+signals:
+  - {type: metric_shift, service: payments-db, metric: db_connections, at: -18, to: 100, ramp: 3}
+  - {type: metric_shift, service: payments, metric: latency_p99, at: -17, factor: 12}
+  - {type: metric_shift, service: checkout, metric: latency_p99, at: -16, factor: 20}
+  - {type: metric_shift, service: checkout, metric: error_rate, at: -16, to: 0.08}
+  - {type: log_burst, service: payments, level: ERROR, template: "ConnectionPoolTimeout: waited {ms}ms for connection", at: -17, rate: 40}
+  - {type: log_burst, service: notifications, level: WARN, template: "SMTP retry attempt {n}", at: -170, until: 30, rate: 2}
+deployments:
+  - {id: D-100, service: checkout, version: "v2.3.1", at: -14, author: alice, diff_summary: "Update button copy on review page", files_changed: ["ui/review.tsx"]}
+config_changes: []
+faults:
+  - {tool: query_metrics, match: {service: payments-db}, fault: timeout, times: 2}
+  - {tool: search_incident_history, fault: unavailable}

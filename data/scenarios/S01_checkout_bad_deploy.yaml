@@ -1,0 +1,25 @@
+id: S01
+seed: 101
+traits: [control]
+incident:
+  title: "Checkout returning 5xx errors"
+  description: "Customers cannot complete orders; gateway shows elevated 5xx for /checkout."
+  reported_at: "2026-03-02T10:30:00Z"
+  affected_services: [checkout, api-gateway]
+  symptoms: ["checkout 5xx rate ~12%", "api-gateway 5xx on /checkout routes"]
+ground_truth:
+  root_cause_component: checkout
+  root_cause_category: bad_deploy
+  expected_outcomes: [ROOT_CAUSE_IDENTIFIED, PROBABLE]
+  key_signals:
+    - {service: checkout, kind: deployment}
+    - {service: checkout, kind: log}
+    - {service: checkout, kind: metric, metric: error_rate}
+signals:
+  - {type: metric_shift, service: checkout, metric: error_rate, at: -21, to: 0.12}
+  - {type: metric_shift, service: api-gateway, metric: error_rate, at: -21, to: 0.05}
+  - {type: log_burst, service: checkout, level: ERROR, template: "NullPointerException in OrderTotalCalculator.compute (line {n})", at: -21, rate: 60}
+  - {type: log_burst, service: api-gateway, level: ERROR, template: "upstream checkout returned 500 for request {id}", at: -21, rate: 25}
+deployments:
+  - {id: D-201, service: checkout, version: "v5.14.0", at: -22, author: dana, diff_summary: "Refactor order total calculation to support bundles", files_changed: ["order/total.go", "order/bundle.go"]}
+  - {id: D-202, service: search, version: "v2.8.3", at: -95, author: ci-bot, diff_summary: "Dependency bumps", files_changed: ["go.sum"]}

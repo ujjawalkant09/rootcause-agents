@@ -1,0 +1,28 @@
+id: S10
+seed: 1010
+traits: [conflicting, misleading]
+incident:
+  title: "Checkout slow and payments CPU high"
+  description: "Checkout latency rising; payments pods at high CPU. Two changes went out this afternoon."
+  reported_at: "2026-03-30T15:40:00Z"
+  affected_services: [checkout, payments]
+  symptoms: ["checkout p99 latency 4x", "payments CPU > 90%", "PSP returning 429s"]
+ground_truth:
+  root_cause_component: payments
+  root_cause_category: config_change
+  aliases: ["external-psp"]
+  expected_outcomes: [ROOT_CAUSE_IDENTIFIED, PROBABLE]
+  key_signals:
+    - {service: payments, kind: config}
+    - {service: payments, kind: log}
+    - {service: payments, kind: metric, metric: cpu}
+signals:
+  - {type: metric_shift, service: payments, metric: cpu, at: -25, to: 93, ramp: 2}
+  - {type: metric_shift, service: payments, metric: latency_p99, at: -25, factor: 8}
+  - {type: metric_shift, service: external-psp, metric: error_rate, at: -24, to: 0.3}
+  - {type: metric_shift, service: checkout, metric: latency_p99, at: -24, factor: 4}
+  - {type: log_burst, service: payments, level: WARN, template: "retrying PSP authorization attempt {n}/50 after 429", at: -25, rate: 90}
+deployments:
+  - {id: D-1101, service: checkout, version: "v5.16.0", at: -20, author: lee, diff_summary: "Add gift-wrap option to cart", files_changed: ["cart/giftwrap.ts", "ui/cart.tsx"]}
+config_changes:
+  - {id: C-1102, service: payments, key: "payments.psp.retry.max_attempts", old: "3", new: "50", at: -26, actor: sam, source: env}

@@ -1,0 +1,25 @@
+id: S07
+seed: 707
+traits: [conflicting]
+incident:
+  title: "Payments failing for all card transactions"
+  description: "Card payments fail; checkout shows payment errors. Checkout CPU alarm fired earlier."
+  reported_at: "2026-03-21T00:20:00Z"
+  affected_services: [payments, checkout]
+  symptoms: ["payments error rate ~35%", "checkout payment failures", "earlier checkout CPU alarm"]
+ground_truth:
+  root_cause_component: payments
+  root_cause_category: infrastructure
+  aliases: ["external-psp"]
+  expected_outcomes: [ROOT_CAUSE_IDENTIFIED, PROBABLE]
+  key_signals:
+    - {service: payments, kind: log}
+    - {service: payments, kind: metric, metric: error_rate}
+    - {service: payments, kind: metric, metric: cert_days_remaining}
+signals:
+  - {type: metric_shift, service: payments, metric: cert_days_remaining, at: -12, to: 0}
+  - {type: metric_shift, service: payments, metric: error_rate, at: -12, to: 0.35}
+  - {type: metric_shift, service: checkout, metric: error_rate, at: -12, to: 0.15}
+  - {type: log_burst, service: payments, level: ERROR, template: "SSLHandshakeException: client certificate expired for psp-gateway (mTLS)", at: -12, rate: 70}
+  - {type: metric_shift, service: checkout, metric: cpu, at: -60, until: -35, to: 92}
+  - {type: log_burst, service: checkout, level: WARN, template: "nightly catalog reindex batch {n} running", at: -60, until: -35, rate: 10}

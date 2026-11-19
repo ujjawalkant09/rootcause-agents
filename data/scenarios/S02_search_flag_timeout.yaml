@@ -1,0 +1,27 @@
+id: S02
+seed: 202
+traits: [misleading]
+incident:
+  title: "Search and homepage very slow"
+  description: "Search results take many seconds; gateway latency alarms firing."
+  reported_at: "2026-03-05T16:00:00Z"
+  affected_services: [search, api-gateway]
+  symptoms: ["search p99 latency > 4s", "api-gateway p99 latency elevated"]
+ground_truth:
+  root_cause_component: search
+  root_cause_category: config_change
+  expected_outcomes: [ROOT_CAUSE_IDENTIFIED, PROBABLE]
+  key_signals:
+    - {service: search, kind: config}
+    - {service: search, kind: metric, metric: thread_pool_active}
+    - {service: search, kind: log}
+signals:
+  - {type: metric_shift, service: search, metric: thread_pool_active, at: -23, to: 200, ramp: 4}
+  - {type: metric_shift, service: search, metric: latency_p99, at: -22, factor: 18}
+  - {type: metric_shift, service: api-gateway, metric: latency_p99, at: -21, factor: 4}
+  - {type: log_burst, service: search, level: WARN, template: "Thread pool saturated: active={n} queued={n}", at: -22, rate: 25}
+  - {type: log_burst, service: search, level: ERROR, template: "backend call exceeded {ms}ms, client still waiting", at: -22, rate: 12}
+deployments:
+  - {id: D-301, service: user-svc, version: "v3.2.0", at: -24, author: omar, diff_summary: "Add avatar resize endpoint", files_changed: ["api/avatar.py", "images/resize.py"]}
+config_changes:
+  - {id: C-302, service: search, key: "search.backend_timeout_ms", old: "800", new: "30000", at: -25, actor: priya, source: feature_flag}

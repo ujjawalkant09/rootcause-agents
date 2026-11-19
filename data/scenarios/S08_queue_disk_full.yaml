@@ -1,0 +1,28 @@
+id: S08
+seed: 808
+traits: [tool_failure]
+incident:
+  title: "Order confirmation emails missing"
+  description: "Customers do not receive order confirmations; checkout logs publish failures."
+  reported_at: "2026-03-24T13:00:00Z"
+  affected_services: [notifications, checkout]
+  symptoms: ["order confirmation emails delayed or missing", "checkout event publish failures"]
+ground_truth:
+  root_cause_component: queue
+  root_cause_category: resource_exhaustion
+  alt_categories: [infrastructure]
+  expected_outcomes: [ROOT_CAUSE_IDENTIFIED, PROBABLE, INCONCLUSIVE]
+  key_signals:
+    - {service: queue, kind: metric, metric: disk_used_pct}
+    - {service: queue, kind: log}
+    - {service: checkout, kind: log}
+signals:
+  - {type: metric_shift, service: queue, metric: disk_used_pct, at: -110, to: 100, ramp: 95}
+  - {type: metric_shift, service: queue, metric: queue_depth, at: -15, factor: 30}
+  - {type: metric_shift, service: queue, metric: consumer_lag, at: -14, factor: 50}
+  - {type: log_burst, service: queue, level: ERROR, template: "IOException: No space left on device writing segment {n}", at: -15, rate: 15}
+  - {type: log_burst, service: checkout, level: ERROR, template: "failed to publish OrderCreated event: broker unavailable", at: -15, rate: 25}
+  - {type: metric_shift, service: notifications, metric: rps, at: -14, factor: 0.1}
+faults:
+  - {tool: query_logs, fault: partial}
+  - {tool: query_metrics, match: {service: queue}, fault: stale, stale_minutes: 25}

@@ -1,0 +1,29 @@
+id: S04
+seed: 404
+traits: [conflicting]
+incident:
+  title: "Gateway 5xx spike"
+  description: "Edge monitoring shows 5xx on many routes. No other alerts."
+  reported_at: "2026-03-12T08:45:00Z"
+  affected_services: [api-gateway]
+  symptoms: ["api-gateway 5xx rate ~9% across routes", "login failures reported by support"]
+ground_truth:
+  root_cause_component: auth
+  root_cause_category: resource_exhaustion
+  alt_categories: [dependency_failure]
+  expected_outcomes: [ROOT_CAUSE_IDENTIFIED, PROBABLE]
+  key_signals:
+    - {service: auth, kind: metric, metric: memory}
+    - {service: auth, kind: log}
+    - {service: api-gateway, kind: log}
+signals:
+  - {type: metric_shift, service: auth, metric: memory, at: -70, to: 97, ramp: 50}
+  - {type: metric_shift, service: auth, metric: cpu, at: -16, to: 96, ramp: 2}
+  - {type: metric_shift, service: auth, metric: latency_p99, at: -15, factor: 25}
+  - {type: metric_shift, service: auth, metric: error_rate, at: -14, to: 0.2}
+  - {type: metric_shift, service: api-gateway, metric: error_rate, at: -14, to: 0.09}
+  - {type: log_burst, service: auth, level: WARN, template: "GC pause {ms}ms exceeded threshold, heap {n}% used", at: -18, rate: 20}
+  - {type: log_burst, service: api-gateway, level: ERROR, template: "upstream auth timed out after {ms}ms", at: -14, rate: 50}
+  - {type: metric_shift, service: cdn, metric: rps, at: -40, until: -30, factor: 1.8}
+deployments:
+  - {id: D-501, service: cdn, version: "edge-rules-77", at: -38, author: netops, diff_summary: "Update cache TTL for static assets", files_changed: ["rules/static.yaml"]}
