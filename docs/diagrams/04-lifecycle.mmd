@@ -1,0 +1,10 @@
+stateDiagram-v2
+    [*] --> PLANNING
+    PLANNING --> GATHERING: plan (task DAG)
+    GATHERING --> REASONING: all ready tasks done / degraded
+    REASONING --> CRITIQUE: >=2 hypotheses with valid citations
+    REASONING --> REASONING: citation validation failed (retry ≤2)
+    CRITIQUE --> GATHERING: NEED_MORE_EVIDENCE and round < 3 and budget ok
+    CRITIQUE --> REPORTING: ACCEPT
+    CRITIQUE --> REPORTING: INCONCLUSIVE or round limit or budget exhausted
+    REPORTING --> [*]

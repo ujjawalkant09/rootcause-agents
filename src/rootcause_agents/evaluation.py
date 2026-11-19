@@ -11,6 +11,7 @@ import json
 import traceback
 from collections import defaultdict
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -133,7 +134,8 @@ def _mean(xs: list[float]) -> float:
 def summarize(rows: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
     by_sys: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in rows:
-        by_sys[r["system"]].append(r)
+        if not r.get("skipped"):
+            by_sys[r["system"]].append(r)
     out: dict[str, dict[str, float]] = {}
     for system, rs in by_sys.items():
         ok = [r for r in rs if r.get("error") is None]
@@ -202,26 +204,41 @@ async def run_matrix(
     concurrency: int = 2,
     sleep_scale: float = 1.0,
     progress: Callable[[str], None] | None = None,
+    max_cost_usd: float | None = None,
 ) -> list[dict[str, Any]]:
+    """Run every (scenario, system, repeat). ``max_cost_usd`` is a hard spend cap: once the summed cost of
+    finished runs reaches it, runs not yet started are recorded as skipped instead of calling the API."""
     out_dir.mkdir(parents=True, exist_ok=True)
     sem = asyncio.Semaphore(concurrency)
     rows: list[dict[str, Any]] = []
     runs_file = out_dir / "runs.jsonl"
     runs_file.write_text("")
+    spent = 0.0
+    session_id = f"eval-{datetime.now():%Y%m%d-%H%M%S}"  # one Langfuse session per evaluation batch
 
     async def one(path: Path, system: str, rep: int) -> None:
         sc = load_scenario(path)
+        nonlocal spent
         async with sem:
+            if max_cost_usd is not None and spent >= max_cost_usd:
+                row = {"scenario_id": sc.id, "system": system, "repeat": rep,
+                       "skipped": f"cost cap ${max_cost_usd:.2f} reached"}
+                rows.append(row)
+                if progress:
+                    progress(f"{sc.id} {system} r{rep}: skipped ({row['skipped']})")
+                return
             try:
                 report = await investigate(
                     path, system, settings=settings, llm=llm_factory(system) if llm_factory else None,
                     topology_path=topology_path, history_path=history_path,
-                    out_dir=out_dir / "runs" / f"{sc.id}-{system}-r{rep}", sleep_scale=sleep_scale)
+                    out_dir=out_dir / "runs" / f"{sc.id}-{system}-r{rep}", sleep_scale=sleep_scale,
+                    session_id=session_id)
                 row = grade(report, sc)
             except Exception as e:  # a crashed run is recorded, not fatal for the matrix
                 row = {"scenario_id": sc.id, "system": system, "traits": sc.traits,
                        "error": f"{type(e).__name__}: {e}", "trace": traceback.format_exc()[-2000:]}
             row["repeat"] = rep
+            spent += float(row.get("cost_usd") or 0.0)
             rows.append(row)
             with runs_file.open("a") as f:
                 f.write(json.dumps(row, default=str) + "\n")
@@ -231,8 +248,11 @@ async def run_matrix(
 
     await asyncio.gather(*(one(p, s, k) for p in scenario_paths for s in systems for k in range(repeats)))
     rows.sort(key=lambda r: (r["scenario_id"], r["system"], r["repeat"]))
-    (out_dir / "summary.md").write_text(render_summary(rows))
-    ok = [r for r in rows if r.get("error") is None]
+    graded = [r for r in rows if not r.get("skipped")]
+    skipped = len(rows) - len(graded)
+    note = f"\n> {skipped} run(s) skipped: spend cap ${max_cost_usd:.2f} reached.\n" if skipped else ""
+    (out_dir / "summary.md").write_text(render_summary(graded) + note)
+    ok = [r for r in graded if r.get("error") is None]
     if ok:
         fields = [k for k in ok[0] if k not in ("traits", "expected_outcomes", "tokens_by_role")]
         with (out_dir / "summary.csv").open("w", newline="") as f:

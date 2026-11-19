@@ -39,3 +39,31 @@ async def test_system_prefix_is_stable_across_incidents(tmp_path):
         text = next(iter(a[role]))
         assert "Checkout latency high" not in text and "2026-03-10" not in text
         assert "Known services:" in text, f"{role}: static topology context should live in the cached prefix"
+
+
+def test_environment_lists_service_specific_metrics(store):
+    """Agents (critic included) must know which saturation metrics exist so they can request them."""
+    from types import SimpleNamespace
+
+    from rootcause_agents.agents.common import fmt_services
+
+    text = fmt_services(SimpleNamespace(store=store))
+    spec = next((n, s) for n, s in store.topology.services.items() if s.metrics)
+    assert spec[0] in text and all(m in text for m in spec[1].metrics)
+    assert "latency_p99" in text  # the common metrics are stated once
+
+
+def test_critic_prompt_forbids_demanding_unobtainable_evidence():
+    from rootcause_agents.agents.common import load_prompt
+
+    text = load_prompt("critic").lower()
+    assert "cannot provide" in text and "need_more_evidence" in text
+    assert "component and failure category" in text  # finer sub-mechanism gaps are issues, not grounds to reject
+
+
+def test_output_heavy_prompts_cap_their_length():
+    """Output tokens cost ~5x input tokens, so the agents that write the most must be told to be brief."""
+    from rootcause_agents.agents.common import load_prompt
+
+    for name in ("reasoning", "reporter", "findings"):
+        assert "one sentence per" in load_prompt(name).lower(), name

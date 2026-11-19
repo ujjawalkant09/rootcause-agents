@@ -28,7 +28,7 @@ EventHook = Callable[[str, dict[str, Any]], None]
 class ToolExecutor:
     def __init__(self, store: TelemetryStore, injector: FaultInjector, budget: BudgetTracker,
                  max_attempts: int = 3, base_backoff_s: float = 0.2, sleep_scale: float = 1.0,
-                 on_event: EventHook | None = None):
+                 on_event: EventHook | None = None, observe: Callable[..., Any] | None = None):
         self.store = store
         self.injector = injector
         self.budget = budget
@@ -36,6 +36,7 @@ class ToolExecutor:
         self.base_backoff_s = base_backoff_s
         self.sleep_scale = sleep_scale
         self.on_event = on_event or (lambda *_: None)
+        self._observe = observe  # e.g. Telemetry.observe → one `tool` observation per call
         self._memo: dict[str, tuple[ToolResult, Evidence | None]] = {}
         self._next_id = 0
         self.evidence: dict[str, Evidence] = {}
@@ -56,6 +57,20 @@ class ToolExecutor:
 
     # ------------------------------------------------------------------ execution
     async def execute(self, tool: str, args: dict[str, Any], agent: str, round: int) -> tuple[ToolResult, Evidence | None]:
+        if self._observe is None:
+            return await self._execute(tool, args, agent, round)
+        as_type = "retriever" if tool == "search_incident_history" else "tool"
+        with self._observe(tool, as_type, input=args, metadata={"agent": agent, "round": round}) as obs:
+            result, ev = await self._execute(tool, args, agent, round)
+            obs.update(output=json.loads(result_for_llm(result, ev)) if len(result_for_llm(result, ev)) < 6000
+                       else {"status": result.status, "evidence_id": ev.id if ev else None},
+                       level="WARNING" if result.is_error else "DEFAULT",
+                       metadata={"agent": agent, "round": round, "attempts": result.attempts,
+                                 "evidence_id": ev.id if ev else None})
+            return result, ev
+
+    async def _execute(self, tool: str, args: dict[str, Any], agent: str, round: int
+                       ) -> tuple[ToolResult, Evidence | None]:
         if tool not in TOOLS:
             self.errors += 1
             return error_result(tool, "BAD_INPUT", f"Unknown tool {tool!r}. Available: {', '.join(TOOLS)}"), None

@@ -7,3 +7,4 @@ Rules:
 - `assumptions`: anything not backed by evidence, including what data gaps forced you to assume (kind "assumption").
 - `recommended_actions`: concrete actions: immediate mitigation (mitigate_now), the actual fix (fix), prevention (prevent) and, if the outcome is not conclusive, specific next investigation steps (investigate_further). Give each a priority and cite the evidence that motivates it.
 - Cite only evidence IDs present in the ledger. Be concise and specific (service names, times, values).
+- Length limits: at most 6 facts, 4 inferences, 4 assumptions and 5 actions; one sentence per item.

@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from rootcause_agents.agents.common import (
     fmt_evidence,
     fmt_gaps,
+    fmt_human,
     fmt_hypotheses,
     fmt_incident,
     fmt_verdicts,
@@ -23,7 +24,7 @@ async def critique(ctx: RunContext, round_: int, hypotheses: list[Hypothesis], e
     b = ctx.budget
     final_round = round_ >= b.budget.max_rounds or b.exhausted()
     user = "\n\n".join([
-        fmt_incident(ctx.incident), fmt_hypotheses(hypotheses), fmt_evidence(evidence), fmt_gaps(gaps),
+        fmt_incident(ctx.incident), fmt_human(ctx), fmt_hypotheses(hypotheses), fmt_evidence(evidence), fmt_gaps(gaps),
         fmt_verdicts(verdicts),
         f"Round: {round_} of max {b.budget.max_rounds}. Tool calls used {b.tool_calls}/{b.budget.max_tool_calls}."
         + (" THIS IS THE FINAL ROUND: decide ACCEPT or INCONCLUSIVE." if final_round else ""),

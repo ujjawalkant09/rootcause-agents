@@ -1,0 +1,15 @@
+flowchart TB
+    UI["Streamlit UI<br/>test incident or custom ticket"] --> RUN
+    CLI["CLI<br/>investigate · eval · ui"] --> RUN
+    RUN["runner.investigate()<br/>builds RunContext"] --> G["LangGraph StateGraph<br/>(§0)"]
+    G --> LLM["OpenAILLM<br/>per-role model · semaphore"]
+    LLM --> CH{"fallback chain<br/>+ circuit breaker"}
+    CH --> M1["MAIN_MODEL<br/>gpt-6.1-terra"]
+    CH --> M2["FALLBACK_MODELS<br/>gpt-6-luna …"]
+    CH -.optional.-> M3["second provider<br/>FALLBACK_BASE_URL"]
+    G --> EX["ToolExecutor<br/>validation · retries+backoff · memo<br/>evidence IDs · budget"]
+    EX --> FI["FaultInjector<br/>timeout · rate limit · partial · stale · empty"]
+    FI --> SIM[("TelemetryStore<br/>seeded synthetic logs, metrics,<br/>deploys, config, topology, history")]
+    RUN --> OUT["runs/&lt;id&gt;/report.json · report.md · trace.jsonl"]
+    G -.callbacks + typed observations.-> LF[("Langfuse<br/>optional")]
+    EX -.tool observations.-> LF

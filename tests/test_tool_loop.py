@@ -65,3 +65,45 @@ async def test_budget_exhaustion_stops_loop(store, scenario):
     res = await run_tool_loop(ctx, "dependency", "s", "t", ["get_deployments"], round_=1, max_turns=5)
     assert len(res.evidence) == 1
     assert res.stopped_reason == "budget"
+
+
+async def test_per_task_quota_caps_calls_and_rejects_excess(store, scenario):
+    # One turn asks for 5 calls with a quota of 3: 3 run, 2 are refused without spending global budget.
+    calls = [tc("query_metrics", {"service": s, "metric": "latency_p99"}, str(i))
+             for i, s in enumerate(["payments", "checkout", "api-gateway", "auth", "cache"])]
+    llm = ScriptedLLM(tool_steps={"observability": [AIMessage(content="", tool_calls=calls),
+                                                    AIMessage(content="", tool_calls=[calls[0]])]})
+    ctx = make_ctx(store, scenario, llm)
+    res = await run_tool_loop(ctx, "observability", "s", "t", ["query_metrics"], round_=1, max_turns=5,
+                              max_calls=3)
+    assert ctx.budget.tool_calls == 3
+    refused = [m for m in res.messages if isinstance(m, ToolMessage) and "QUOTA_REACHED" in m.content]
+    assert len(refused) == 2
+    assert res.stopped_reason == "quota"
+    assert res.turns == 1  # no further LLM turn once the quota is spent
+
+
+async def test_no_quota_by_default(store, scenario):
+    calls = [tc("query_metrics", {"service": s, "metric": "latency_p99"}, str(i))
+             for i, s in enumerate(["payments", "checkout", "api-gateway", "auth"])]
+    llm = ScriptedLLM(tool_steps={"observability": [AIMessage(content="", tool_calls=calls),
+                                                    AIMessage(content="done")]})
+    ctx = make_ctx(store, scenario, llm)
+    res = await run_tool_loop(ctx, "observability", "s", "t", ["query_metrics"], round_=1, max_turns=5)
+    assert ctx.budget.tool_calls == 4 and res.stopped_reason == "final"
+
+
+async def test_specialist_applies_budget_quota_and_tells_the_model(store, scenario):
+    from rootcause_agents.agents.specialists import run_specialist
+    from rootcause_agents.schemas import SpecialistFindings, Task
+
+    calls = [tc("query_metrics", {"service": s, "metric": "latency_p99"}, str(i))
+             for i, s in enumerate(["payments", "checkout", "api-gateway", "auth", "cache"])]
+    llm = ScriptedLLM(tool_steps={"observability": [AIMessage(content="", tool_calls=calls)]},
+                      structured={"observability": [SpecialistFindings(key_observations=[], timeline=[], gaps=[])]})
+    ctx = make_ctx(store, scenario, llm, Budget(max_tool_calls_per_task=2))
+    task = Task(agent="observability", objective="check latency", services=["payments"], rationale="r")
+    out = await run_specialist(ctx, "observability", task, 1)
+    assert ctx.budget.tool_calls == 2 and len(out.evidence) == 2
+    assert "2 tool calls" in llm.calls[0]["messages"][1].content
+    assert not any("stopped early" in g for g in out.gaps)  # a spent quota is normal, not a gap

@@ -198,6 +198,7 @@ class RunStats(_Strict):
     degraded_nodes: list[str] = []
     by_role: list[RoleUsage] = []
     llm_fallbacks: int = 0
+    trace_url: str | None = None  # Langfuse trace, when enabled
 
 
 class InvestigationReport(_Strict):
@@ -212,5 +213,6 @@ class InvestigationReport(_Strict):
     data_gaps: list[str]
     recommended_actions: list[RecommendedAction]
     critic_issues: list[str] = []
+    human_inputs: list[str] = []  # human-in-the-loop hints (labelled, never cited as evidence)
     evidence: list[Evidence]
     stats: RunStats

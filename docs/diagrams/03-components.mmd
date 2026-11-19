@@ -1,0 +1,47 @@
+flowchart TB
+    IR[Incident Report<br/>JSON/YAML] --> ORCH
+
+    subgraph Core["Orchestration Core"]
+        ORCH[Orchestrator Agent<br/>plan / re-plan]
+        SCHED[LangGraph runtime<br/>Send fan-out]
+        BUD[Budget & Termination<br/>Controller]
+        BB[(Blackboard<br/>InvestigationState<br/>evidence ledger · hypotheses · tasks)]
+    end
+
+    subgraph Specialists["Specialist Agents (parallel)"]
+        OBS[Observability Agent]
+        DEP[Dependency Agent]
+        HIST[History lookup<br/>tool task]
+    end
+
+    subgraph Analysis["Analysis Agents"]
+        REA[Reasoning Agent<br/>competing hypotheses]
+        CRI[Critic Agent<br/>challenge / request evidence]
+        REP[Reporting Agent]
+    end
+
+    subgraph Tools["Tool Layer (structured I/O + FaultInjector)"]
+        T1[query_logs]
+        T2[query_metrics]
+        T3[get_deployments]
+        T4[get_config_changes]
+        T5[get_service_dependencies]
+        T6[search_incident_history]
+    end
+
+    SIM[(Simulated Environment<br/>seeded scenario data)]
+
+    ORCH --> SCHED
+    SCHED --> OBS & DEP & HIST
+    OBS --> T1 & T2
+    DEP --> T3 & T4 & T5
+    HIST --> T6
+    T1 & T2 & T3 & T4 & T5 & T6 --> SIM
+    OBS & DEP & HIST -->|Evidence| BB
+    BB --> REA -->|Hypotheses| BB
+    BB --> CRI -->|Verdict + EvidenceRequests| ORCH
+    CRI -->|ACCEPT / INCONCLUSIVE| REP
+    BB --> REP --> OUT[InvestigationReport<br/>JSON + Markdown]
+    BUD -.enforces.- SCHED
+    BUD -.enforces.- ORCH
+    TRACE[(JSONL Trace)] -.-> Core

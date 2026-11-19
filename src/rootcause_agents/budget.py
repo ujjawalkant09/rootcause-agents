@@ -18,6 +18,7 @@ class Budget(BaseModel):
     max_rounds: int = 3
     max_tool_calls: int = 40
     max_tool_turns_per_agent: int = 6
+    max_tool_calls_per_task: int = 8  # keeps budget for critic-driven follow-up rounds
     max_total_tokens: int = 400_000
     max_wall_clock_s: float = 420.0
     max_reasoning_retries: int = 2
@@ -52,6 +53,18 @@ class BudgetTracker:
         r.output_tokens += usage.output_tokens
         r.cached_tokens += usage.cached_tokens
         r.cost_usd = round(r.cost_usd + cost, 6)
+
+    # -- persistence (a paused session resumes with cumulative usage)
+    def snapshot(self) -> dict[str, Any]:
+        return {"tool_calls": self.tool_calls, "input_tokens": self.input_tokens, "output_tokens": self.output_tokens,
+                "llm_calls": self.llm_calls, "cached_tokens": self.cached_tokens, "cost_usd": self.cost_usd,
+                "elapsed_s": self.elapsed(), "by_role": [r.model_dump() for r in self.by_role.values()]}
+
+    def restore(self, snap: dict[str, Any]) -> None:
+        for k in ("tool_calls", "input_tokens", "output_tokens", "llm_calls", "cached_tokens", "cost_usd"):
+            setattr(self, k, snap.get(k, getattr(self, k)))
+        self.started -= float(snap.get("elapsed_s", 0.0))  # latency stays cumulative
+        self.by_role = {r["role"]: RoleUsage(**r) for r in snap.get("by_role", [])}
 
     @property
     def total_tokens(self) -> int:

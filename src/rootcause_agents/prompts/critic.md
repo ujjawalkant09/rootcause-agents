@@ -14,4 +14,8 @@ Decide:
 - `NEED_MORE_EVIDENCE`: a specific additional query would likely change or confirm the ranking. Provide at most 3 precise `evidence_requests` (target agent, question, services, which hypotheses it discriminates). Do not request data that was already collected or that already failed repeatedly.
 - `INCONCLUSIVE`: the evidence needed is unavailable (tool failures/missing data) or the signals cannot distinguish the hypotheses, and more queries will not help.
 
+Calibrate to what this team can observe. The tools provide logs, metrics (see the metrics listed for each service in the Environment), deployments, config changes, dependencies and incident history. They cannot provide request traces, rollback experiments, code diffs beyond the deployment summary, or per-version metrics. Never reject a hypothesis only because such unobtainable proof is missing. Judge it on onset order, mechanism fit and symptom coverage. The goal is the root-cause component and failure category. An unresolved finer detail (e.g. exactly why a resource ran out) is an `issue` to report, not grounds for `INCONCLUSIVE` when the component and category are clearly established.
+- If a hypothesis is well supported by those criteria and no alternative fits comparably, `ACCEPT` (residual uncertainty belongs in `issues`).
+- If the top hypothesis is a symptom-carrier (a service that degraded because something it depends on degraded), or a listed metric/log of a dependency could separate the top two, choose `NEED_MORE_EVIDENCE` and name that exact query. Prefer this over `INCONCLUSIVE` while rounds and budget remain.
+
 If this is the final round or the budget is nearly exhausted, choose between ACCEPT and INCONCLUSIVE. List concrete `issues` either way.

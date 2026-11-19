@@ -1,4 +1,4 @@
-.PHONY: setup test live lint demo eval
+.PHONY: setup test live lint demo eval ui
 
 setup:
 	uv sync
@@ -17,3 +17,6 @@ demo:
 
 eval:
 	uv run rootcause-agents eval --systems mas,single,mas-cheap
+
+ui:  ## open the web UI
+	uv run rootcause-agents ui

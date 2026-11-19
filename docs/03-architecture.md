@@ -1,74 +1,79 @@
 # 03 – Architecture & Agent Coordination
 
-> Implementation: **LangGraph `StateGraph`** with OpenAI models. The diagrams below show the logical design, and §0 shows the actual graph.
+> Implementation: **LangGraph `StateGraph`** (`src/rootcause_agents/graph.py`) with OpenAI models via `langchain-openai`. §0 is the graph exactly as built, §0.1 the runtime around it, §1–3 the logical design.
 
-## 0. LangGraph graph (what will be implemented)
+## 0. LangGraph graph (as implemented)
+
+Image: [`diagrams/01-langgraph-graph.png`](diagrams/01-langgraph-graph.png) (all diagrams are also exported as PNG in [`docs/diagrams/`](diagrams/), with `.mmd` sources).
 
 ```mermaid
 flowchart LR
-    START((START)) --> plan[orchestrator<br/>plan / re-plan]
-    plan -- "Send() per task<br/>(parallel)" --> obs[observability]
-    plan -- "Send() per task" --> dep[dependency]
-    plan -- "Send() round 1" --> hist[history<br/>no LLM]
-    obs --> reason[reasoning]
+    START((START)) --> plan["orchestrator<br/>plan / re-plan<br/>(≤4 tasks per round)"]
+    plan -- "Send() one branch per task<br/>(parallel, max_concurrency 4)" --> obs["observability<br/>logs + metrics"]
+    plan -- "Send() per task" --> dep["dependency<br/>deploys · config · topology"]
+    plan -- "Send() round 1 only" --> hist["history<br/>(deterministic, no LLM)"]
+    plan -- "no tasks" --> reason
+    obs --> reason["reasoning<br/>≥2 competing hypotheses"]
     dep --> reason
     hist --> reason
-    reason -- citations invalid<br/>(≤2 retries) --> reason
-    reason --> critic[critic]
-    critic -- NEED_MORE_EVIDENCE<br/>& round<3 & budget ok --> plan
-    critic -- ACCEPT / INCONCLUSIVE<br/>/ limit reached --> report[reporter]
+    reason -. "invalid evidence IDs<br/>re-prompt ≤2×" .-> reason
+    reason --> critic["critic<br/>ACCEPT · NEED_MORE_EVIDENCE · INCONCLUSIVE"]
+    critic -- "NEED_MORE_EVIDENCE + requests<br/>& round < max & budget ok<br/>& last round added evidence" --> plan
+    critic -- "stuck (or review mode)<br/>& asked < 2 times" --> human["human_review<br/>interrupt() → pause<br/>state saved in Postgres"]
+    human -- "continue + hint<br/>(one extra round)" --> plan
+    human -- "write report" --> report
+    critic -- "otherwise" --> report["reporter<br/>outcome decided by code"]
     report --> END((END))
 ```
 
-```python
-# sketch – src/rootcause_agents/graph.py
-import operator
-from typing import Annotated, TypedDict
-from langgraph.graph import StateGraph, START, END
-from langgraph.types import Send, RetryPolicy
+**Persistence and human-in-the-loop.** The graph is compiled with a LangGraph checkpointer (`AsyncPostgresSaver` on the local Docker Postgres, or in-memory without `DATABASE_URL`), and each investigation is a thread (`thread_id` = run id) checkpointed after every super-step. In `stuck` mode, when the critic cannot conclude, `human_review` calls `interrupt()`: the run pauses and the question (top hypotheses, critic issues) is shown in the UI. `resume_session` rebuilds the run context from the checkpoint (seeded simulator, restored budget and evidence counters, so it works from a new process) and continues with `Command(resume=answer)`. A human hint is passed to later agents as a *lead to verify with tools*. It is never citable evidence, and it appears in the report under "Human input". Each run asks at most 2 times, and evaluation runs never pause. Checkpoint deserialization uses an explicit allowlist of our schema classes.
 
-class InvestigationState(TypedDict):
-    incident: IncidentReport
-    plan: list[Task]
-    evidence: Annotated[list[Evidence], operator.add]       # parallel branches merge
-    findings: Annotated[list[SpecialistFindings], operator.add]
-    data_gaps: Annotated[list[str], operator.add]
-    hypotheses: list[Hypothesis]
-    verdicts: Annotated[list[CriticVerdict], operator.add]
-    round: int
-    usage: Annotated[list[UsageRecord], operator.add]      # tokens / tool calls per node
-    report: InvestigationReport | None
+**Shared state** (`InvestigationState`, a `TypedDict` with reducers so parallel branches merge safely):
 
-def fan_out(state):        # router after orchestrator
-    return [Send(t.agent, {"task": t, "incident": state["incident"]}) for t in state["plan"]]
+| Key | Reducer | Written by |
+|---|---|---|
+| `evidence: list[Evidence]` | `merge_evidence` (dedupe by code-assigned `E-n` id) | specialists, history |
+| `findings: list[SpecialistFindings]` | append | specialists |
+| `data_gaps: list[str]` | append | any node, tool failures |
+| `plan: list[Task]` (`agent, objective, services, rationale`) | replace | orchestrator |
+| `hypotheses: list[Hypothesis]` | replace | reasoning |
+| `verdicts: list[CriticVerdict]` | append | critic |
+| `round`, `evidence_at_round_start` | replace | orchestrator |
+| `report: InvestigationReport` | replace | reporter |
 
-def after_critic(state):   # termination controller
-    v = state["verdicts"][-1]
-    if v.decision == "NEED_MORE_EVIDENCE" and state["round"] < MAX_ROUNDS and budget_ok(state):
-        return "orchestrator"
-    return "reporter"
+**Task dependencies** are structural: specialists depend only on the plan, so they run in parallel; reasoning waits for *all* branches of the round (LangGraph superstep barrier); the critic depends on reasoning; the next round depends on the critic's evidence requests, which the orchestrator turns into new tasks.
 
-retry = RetryPolicy(max_attempts=3)
-g = StateGraph(InvestigationState)
-g.add_node("orchestrator", orchestrator_node, retry_policy=retry)
-g.add_node("observability", observability_node, retry_policy=retry)
-g.add_node("dependency", dependency_node, retry_policy=retry)
-g.add_node("history", history_node)
-g.add_node("reasoning", reasoning_node, retry_policy=retry)
-g.add_node("critic", critic_node, retry_policy=retry)
-g.add_node("reporter", reporter_node, retry_policy=retry)
-g.add_edge(START, "orchestrator")
-g.add_conditional_edges("orchestrator", fan_out, ["observability", "dependency", "history"])
-for n in ("observability", "dependency", "history"):
-    g.add_edge(n, "reasoning")
-g.add_edge("reasoning", "critic")
-g.add_conditional_edges("critic", after_critic, ["orchestrator", "reporter"])
-g.add_edge("reporter", END)
-graph = g.compile()
-# run: graph.invoke({"incident": inc, "round": 0}, {"recursion_limit": 40})
+**Reliability inside the graph:**
+- every node runs in `_resilient`: 2 attempts, then it degrades (a gap is recorded and the run continues);
+- the tool loop is bounded: ≤6 LLM turns and ≤8 tool calls per task (`max_tool_calls_per_task`, which keeps budget for follow-up rounds);
+- global budget: ≤40 tool calls, 400k tokens, 420 s and `max_rounds` (default 2 in `.env`), with `recursion_limit=60` as a final net;
+- the outcome comes from `budget.decide_outcome`: ACCEPT + top ≥0.75 + margin ≥0.2 → ROOT_CAUSE_IDENTIFIED; ACCEPT → PROBABLE; else INCONCLUSIVE.
+
+## 0.1 Runtime view (what surrounds the graph)
+
+Image: [`diagrams/02-runtime.png`](diagrams/02-runtime.png)
+
+```mermaid
+flowchart TB
+    UI["Streamlit UI<br/>test incident or custom ticket"] --> RUN
+    CLI["CLI<br/>investigate · eval · ui"] --> RUN
+    RUN["runner.investigate()<br/>builds RunContext"] --> G["LangGraph StateGraph<br/>(§0)"]
+    G --> LLM["OpenAILLM<br/>per-role model · semaphore"]
+    LLM --> CH{"fallback chain<br/>+ circuit breaker"}
+    CH --> M1["MAIN_MODEL<br/>gpt-6.1-terra"]
+    CH --> M2["FALLBACK_MODELS<br/>gpt-6-luna …"]
+    CH -.optional.-> M3["second provider<br/>FALLBACK_BASE_URL"]
+    G --> EX["ToolExecutor<br/>validation · retries+backoff · memo<br/>evidence IDs · budget"]
+    EX --> FI["FaultInjector<br/>timeout · rate limit · partial · stale · empty"]
+    FI --> SIM[("TelemetryStore<br/>seeded synthetic logs, metrics,<br/>deploys, config, topology, history")]
+    RUN --> OUT["runs/&lt;id&gt;/report.json · report.md · trace.jsonl"]
+    G -.callbacks + typed observations.-> LF[("Langfuse<br/>optional")]
+    EX -.tool observations.-> LF
 ```
 
-> Exact LangGraph signatures (e.g. `RetryPolicy` fields) will be checked against the installed version during implementation.
+- **Prompt caching:** system prompt = instructions + static environment only, plus `prompt_cache_key` per role. Cached tokens are priced at the cached rate.
+- **Token diet:** tool results reach the model compacted (`compact_data`), while the ledger keeps the full data.
+- **Observability:** one Langfuse trace per run (`investigate-incident`), with `agent` / `tool` / `retriever` / `evaluator` observations, a generation per LLM call, and scores for outcome, confidence, cost, tool calls and latency. See the README.
 
 ## 1. High-level component diagram (logical)
 
@@ -142,7 +147,7 @@ stateDiagram-v2
 ```mermaid
 sequenceDiagram
     autonumber
-    participant U as CLI
+    participant U as UI / CLI
     participant O as Orchestrator
     participant S as Scheduler
     participant OB as Observability
@@ -189,13 +194,13 @@ This sequence also shows a typical *misleading evidence* scenario: a deploy coin
 
 **Pattern:** a hybrid of *orchestrator–workers* (dynamic task decomposition) and *evaluator–optimizer* (Critic feedback loop) over a shared *blackboard*.
 
-1. **The Orchestrator plans once and re-plans after every Critic verdict.** Its output is a typed `InvestigationPlan`: a list of `Task{id, agent, objective, params_hint, depends_on, priority}`. It never calls tools directly.
-2. **LangGraph executes the plan.** The `Send` API fans out one branch per task, and the branches run concurrently in the same superstep. Each task has a timeout and a retry policy, and a failure is recorded on the blackboard without crashing the run.
-3. **Specialists are tool-using agents.** Each one runs a short bounded tool loop (at most 6 tool turns) against *its own* subset of tools. It emits `Evidence` records plus a short `Findings` summary with explicit *gaps* ("metrics for `inventory` unavailable – timeout ×3").
+1. **The Orchestrator plans once and re-plans after every Critic verdict.** Its output is a typed `InvestigationPlan`: a list of `Task{agent, objective, services, rationale}` (at most 4 per round). It never calls tools directly.
+2. **LangGraph executes the plan.** The `Send` API fans out one branch per task, and the branches run concurrently in the same superstep. Each node gets 2 attempts; a final failure is recorded as a data gap without crashing the run.
+3. **Specialists are tool-using agents.** Each one runs a short bounded tool loop (at most 6 LLM turns and 8 tool calls per task) against *its own* subset of tools. It emits `Evidence` records plus a short `Findings` summary with explicit *gaps* ("metrics for `inventory` unavailable – timeout ×3").
 4. **The Reasoning Agent sees only the blackboard**: evidence summaries, gaps and prior critiques. It does not see raw transcripts. It outputs ranked hypotheses that cite evidence IDs.
 5. **Code validates citations** before the Critic sees anything (invalid IDs trigger a re-prompt).
 6. **The Critic** checks for anchoring, temporal ordering (cause must precede effect), unexplained symptoms, conflicting evidence and missing data. It returns a verdict plus *specific* evidence requests.
-7. **The termination controller** decides whether to loop again or report (see 06).
+7. **The termination controller** (`after_critic` + `should_continue`) loops back only if the Critic asked for specific evidence, rounds and budget remain, and the last round added new evidence; otherwise it reports (see 06).
 8. **The Reporting Agent** turns the final blackboard into the report. It is not allowed to introduce new claims; a code check verifies that every cited ID exists.
 
 ### Why this is "genuine collaboration" and not a prompt chain

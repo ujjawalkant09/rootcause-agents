@@ -1,0 +1,17 @@
+flowchart LR
+    START((START)) --> plan["orchestrator<br/>plan / re-plan<br/>(≤4 tasks per round)"]
+    plan -- "Send() one branch per task<br/>(parallel, max_concurrency 4)" --> obs["observability<br/>logs + metrics"]
+    plan -- "Send() per task" --> dep["dependency<br/>deploys · config · topology"]
+    plan -- "Send() round 1 only" --> hist["history<br/>(deterministic, no LLM)"]
+    plan -- "no tasks" --> reason
+    obs --> reason["reasoning<br/>≥2 competing hypotheses"]
+    dep --> reason
+    hist --> reason
+    reason -. "invalid evidence IDs<br/>re-prompt ≤2×" .-> reason
+    reason --> critic["critic<br/>ACCEPT · NEED_MORE_EVIDENCE · INCONCLUSIVE"]
+    critic -- "NEED_MORE_EVIDENCE + requests<br/>& round < max & budget ok<br/>& last round added evidence" --> plan
+    critic -- "stuck (or review mode)<br/>& asked < 2 times" --> human["human_review<br/>interrupt() → pause<br/>state saved in Postgres"]
+    human -- "continue + hint<br/>(one extra round)" --> plan
+    human -- "write report" --> report
+    critic -- "otherwise" --> report["reporter<br/>outcome decided by code"]
+    report --> END((END))

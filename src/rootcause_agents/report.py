@@ -39,6 +39,8 @@ def render_markdown(r: InvestigationReport) -> str:
     for a in r.recommended_actions:
         ev = f" `[{', '.join(a.evidence_ids)}]`" if a.evidence_ids else ""
         out.append(f"- **{a.priority}** ({a.type}) {a.action}{ev}\n")
+    if r.human_inputs:
+        out += ["\n## Human input (on-call engineer, not evidence)\n", "".join(f"- {h}\n" for h in r.human_inputs)]
     if r.critic_issues:
         out += ["\n## Critic issues raised\n", "".join(f"- {i}\n" for i in r.critic_issues)]
     out.append("\n## Evidence ledger\n| ID | Tool | Status | Summary |\n|---|---|---|---|\n")

@@ -10,14 +10,15 @@ from typing import Any
 
 
 class Tracer:
-    def __init__(self, path: Path | None = None, echo: Any | None = None):
+    def __init__(self, path: Path | None = None, echo: Any | None = None, append: bool = False):
         self.path = path
         self.events: list[dict[str, Any]] = []
         self.echo = echo  # optional callable(event) for live CLI output
         self._t0 = time.monotonic()
         if path:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("")
+            if not append:  # a resumed session keeps writing to the same trace
+                path.write_text("")
 
     def event(self, kind: str, data: dict[str, Any] | None = None, **kw: Any) -> None:
         ev = {"ts": datetime.now(UTC).isoformat(), "t": round(time.monotonic() - self._t0, 3),

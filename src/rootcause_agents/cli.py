@@ -86,6 +86,7 @@ def evaluate(
     repeats: int = typer.Option(1, min=1),
     concurrency: int = typer.Option(2, min=1),
     out: Path = typer.Option(Path("eval/results"), help="Output directory"),
+    max_cost: float = typer.Option(2.0, help="Hard spend cap in USD; remaining runs are skipped once reached"),
 ) -> None:
     """Run the comparison matrix and write eval/results/summary.md."""
     from rootcause_agents.evaluation import run_matrix
@@ -98,10 +99,21 @@ def evaluate(
     paths = all_paths if scenarios == "all" else [
         p for p in all_paths if load_scenario(p).id in {s.strip() for s in scenarios.split(",")}]
     sys_list = [s.strip() for s in systems.split(",")]
-    console.print(f"Running {len(paths)} scenarios × {sys_list} × {repeats}")
+    console.print(f"Running {len(paths)} scenarios × {sys_list} × {repeats} (spend cap ${max_cost:.2f})")
     asyncio.run(run_matrix(sys_list, paths, settings, repeats=repeats, out_dir=out, concurrency=concurrency,
-                           progress=lambda m: console.print(m)))
+                           progress=lambda m: console.print(m), max_cost_usd=max_cost))
     console.print(Markdown((out / "summary.md").read_text()))
+
+
+@app.command()
+def ui(port: int = typer.Option(8501, help="Port for the local web UI")) -> None:
+    """Open the web UI in your browser (run agents, watch them live, read reports, run the evaluation)."""
+    import subprocess
+    import sys
+
+    app_path = Path(__file__).with_name("ui") / "app.py"
+    raise typer.Exit(subprocess.call([sys.executable, "-m", "streamlit", "run", str(app_path),
+                                      "--server.port", str(port), "--browser.gatherUsageStats", "false"]))
 
 
 if __name__ == "__main__":  # pragma: no cover

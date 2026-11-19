@@ -17,3 +17,4 @@ Produce competing root-cause hypotheses:
    - Account for data gaps: evidence from partial/stale results is weaker, and missing data lowers confidence.
    - If the evidence cannot distinguish the hypotheses, or nothing shows a real anomaly, say so with low confidences (an inconclusive outcome is acceptable and better than a confident wrong answer).
 4. Cite ONLY evidence IDs present in the ledger. Uncited claims must be kind "assumption".
+5. Be brief (output is expensive): at most 3 hypotheses, at most 4 mechanism claims each, one sentence per claim. Do not restate the evidence ledger.

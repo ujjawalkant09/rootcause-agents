@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from rootcause_agents.agents.common import fmt_evidence, fmt_gaps, fmt_hypotheses, fmt_incident, system_prompt
+from rootcause_agents.agents.common import (
+    fmt_evidence,
+    fmt_gaps,
+    fmt_human,
+    fmt_hypotheses,
+    fmt_incident,
+    system_prompt,
+)
 from rootcause_agents.context import RunContext
 from rootcause_agents.schemas import (
     Claim,
@@ -35,7 +42,7 @@ def fallback_draft(outcome: Outcome, hyps: list[Hypothesis], evidence: list[Evid
 async def write_report(ctx: RunContext, outcome: Outcome, hyps: list[Hypothesis], evidence: list[Evidence],
                        gaps: list[str], verdict: CriticVerdict | None) -> ReportDraft:
     user = "\n\n".join([
-        fmt_incident(ctx.incident), f"OUTCOME (decided by policy, do not change): {outcome}",
+        fmt_incident(ctx.incident), fmt_human(ctx), f"OUTCOME (decided by policy, do not change): {outcome}",
         fmt_hypotheses(hyps), fmt_evidence(evidence), fmt_gaps(gaps),
         f"CRITIC: {verdict.decision if verdict else 'n/a'}; issues: {'; '.join(verdict.issues) if verdict else ''}",
     ])
@@ -66,5 +73,6 @@ def assemble(ctx: RunContext, outcome: Outcome, hyps: list[Hypothesis], draft: R
         incident_id=ctx.incident.id, system=ctx.system, outcome=outcome, summary=draft.summary,
         ranked_hypotheses=hyps, facts=draft.facts, inferences=draft.inferences, assumptions=draft.assumptions,
         data_gaps=all_gaps, recommended_actions=draft.recommended_actions, critic_issues=issues,
+        human_inputs=list(ctx.human_inputs),
         evidence=sorted(evidence, key=lambda e: int(e.id.split("-")[1])), stats=stats,
     )

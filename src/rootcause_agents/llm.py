@@ -105,8 +105,9 @@ class OpenAILLM:
 
     def __init__(self, settings: Settings, models: dict[str, str], on_usage: UsageHook | None = None,
                  on_event: EventHook | None = None, client_factory: ClientFactory | None = None,
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic, callbacks: Callable[[], list[Any]] | None = None):
         self.settings = settings
+        self._callbacks = callbacks or (lambda: [])  # e.g. Langfuse CallbackHandler for the current run
         self.models = models
         self.on_usage = on_usage or (lambda *_: None)
         self.on_event = on_event or (lambda *_: None)
@@ -136,7 +137,16 @@ class OpenAILLM:
             # prompt_cache_key routes same-prefix requests to warm cache; OpenAI-specific, so primary provider only
             kw = {"prompt_cache_key": f"rootcause-agents:{role}"} if self.settings.prompt_cache and ep.primary_provider \
                 else {}
-            self._clients[cache_key] = self._factory(ep.model, ep.base_url, ep.api_key, kw)
+            client = self._factory(ep.model, ep.base_url, ep.api_key, kw)
+            # Observability lives on the model (not the outer runnable): a structured-output call is then ONE
+            # generation named after the agent, without tracing every parser step. Clients are per run, so the
+            # run's callbacks (e.g. the Langfuse handler) can be bound here once.
+            cbs = self._callbacks()
+            if cbs:
+                client.callbacks = cbs
+            client.name = role
+            client.metadata = {"agent": role, "model": ep.model, "primary_provider": ep.primary_provider}
+            self._clients[cache_key] = client
         return self._clients[cache_key]
 
     async def _with_fallback(self, role: str, attempt: Callable[[Any, Endpoint], Awaitable[Any]]) -> Any:

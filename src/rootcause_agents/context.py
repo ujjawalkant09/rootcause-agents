@@ -8,6 +8,7 @@ from rootcause_agents.budget import BudgetTracker
 from rootcause_agents.llm import LLM
 from rootcause_agents.schemas import IncidentReport
 from rootcause_agents.sim.store import TelemetryStore
+from rootcause_agents.telemetry import NoopTelemetry
 from rootcause_agents.tools.executor import ToolExecutor
 from rootcause_agents.tracing import Tracer
 
@@ -22,3 +23,5 @@ class RunContext:
     tracer: Tracer
     system: str
     degraded_nodes: list[str] = field(default_factory=list)
+    telemetry: NoopTelemetry = field(default_factory=NoopTelemetry)  # Langfuse when configured
+    human_inputs: list[str] = field(default_factory=list)  # hints from the on-call engineer (HITL), not evidence

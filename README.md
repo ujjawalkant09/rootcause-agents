@@ -9,26 +9,70 @@
 - An evidence ledger where every claim cites a tool-result ID, enforced by code, so facts are separated from assumptions
 - Fault-tolerant tooling: retries with backoff, memoisation, budgets, graceful degradation, and fault injection (timeouts, partial or stale data)
 - LLM resilience and cost control: a model and provider fallback chain with a circuit breaker, OpenAI prompt caching with cached-token cost accounting, and compact tool payloads (49% smaller)
+- **Persistent sessions + human-in-the-loop**: LangGraph Postgres checkpointer (local Docker); the agents pause with `interrupt()` when stuck and resume with your hint
+- A **web UI** (Streamlit): pick a test incident or write your own ticket, watch the agents work live, read the report, run the evaluation with a hard spend cap
+- **Langfuse observability**: one trace per investigation with typed `agent` / `tool` / `retriever` / `evaluator` observations and a generation (model, tokens, cost) for every LLM call
 - An evaluation harness that compares the multi-agent system with a single-agent baseline on accuracy, grounding, tool calls, tokens, cost and latency
-- Built test-first: 100+ offline tests using a scripted LLM, plus CI
+- Built test-first: 130+ offline tests using a scripted LLM, plus CI
 
 A LangGraph + OpenAI multi-agent system that investigates production incidents in a simulated environment (logs, metrics, deployments, config changes, service dependencies, incident history), compares competing root-cause hypotheses, challenges them with a critic, and produces an **evidence-backed report**: ranked hypotheses, supporting and contradicting evidence, confidence, facts vs inferences vs assumptions, data gaps, and remediation. An honest **INCONCLUSIVE** is a valid outcome.
 
-The design docs are in [`docs/`](docs/README.md) (architecture diagrams in [`docs/03-architecture.md`](docs/03-architecture.md)). Contributor and agent instructions are in [`CLAUDE.md`](CLAUDE.md).
+![LangGraph architecture](docs/diagrams/01-langgraph-graph.png)
+
+The design docs are in [`docs/`](docs/README.md) (architecture and coordination in [`docs/03-architecture.md`](docs/03-architecture.md), PNG diagrams in [`docs/diagrams/`](docs/diagrams/)). Contributor and agent instructions are in [`CLAUDE.md`](CLAUDE.md).
 
 ## Quick start
+
+**Easiest (no commands):** double-click `start-ui.command` (macOS), or run `make ui`. The UI opens at http://localhost:8501.
+
+For **saved sessions and agents that ask you for input**, start the local Postgres once with `docker compose up -d` (Docker Desktop must be running). `DATABASE_URL` in `.env` points to it.
+
+| Tab | What you can do |
+|---|---|
+| 🔍 Investigate | Pick one of the 10 test incidents **or write your own ticket** (title, description, symptoms, services), choose `mas` / `mas-cheap` / `single`, click **Run**, watch each agent step live, then read the report (ranked hypotheses, cited facts, assumptions, actions, evidence ledger, cost per agent, Langfuse link) |
+| 📊 Evaluation | Choose systems and incidents, see the estimated cost, set a **hard spend cap**, run the comparison and view the results |
+| 💬 Sessions | Every multi-agent run is a LangGraph thread saved in Postgres. When the agents are stuck they **pause and ask you** (hint, or write the report now); answer immediately or later, even after a restart |
+| 🗂️ Past runs | Re-open any earlier report |
+
+Custom tickets are investigated against the simulated telemetry of the environment you pick; no real production systems are queried.
+
+**Command line:**
 
 ```bash
 # prerequisites: Python ≥3.11, uv (https://docs.astral.sh/uv/)
 make setup                 # uv sync
 cp .env.example .env       # then put your OPENAI_API_KEY in .env
-make test                  # 100+ offline tests, no API key needed
+make test                  # 130+ offline tests, no API key needed
 
 uv run rootcause-agents list                              # the 10 synthetic incidents
 uv run rootcause-agents investigate S03 --system mas      # live trace + report (runs/<id>/report.md)
 uv run rootcause-agents investigate S03 --system single   # single-agent baseline
 make eval                                            # MAS vs MAS-cheap vs single → eval/results/summary.md
+uv run rootcause-agents eval --scenarios S01,S03 --max-cost 1.0  # hard spend cap (default $2)
+uv run rootcause-agents ui                                # web UI
 ```
+
+### Observability with Langfuse (optional)
+
+Add `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_BASE_URL` to `.env` (see `.env.example`). Every investigation then becomes one trace, structured following the [Langfuse trace best practices](https://langfuse.com/docs/observability/best-practices):
+
+```
+investigate-incident                agent      input: the incident · output: outcome, root cause, confidence
+├─ plan-investigation               agent      orchestrator, one per round
+├─ observability-agent              agent      one per task, in parallel
+│  ├─ observability                 generation every LLM call: prompt, output, model, tokens, cached tokens, cost
+│  └─ query_logs / query_metrics    tool       sibling of the generation that requested it
+├─ dependency-agent                 agent      (get_deployments, get_config_changes, get_service_dependencies)
+├─ search_incident_history          retriever
+├─ generate-hypotheses              agent
+├─ critique-hypotheses              evaluator  critic decision + issues
+└─ write-report                     agent
+```
+
+- System and scenario are tags, and an evaluation batch is one session.
+- Model fallbacks, LLM errors and degraded nodes are WARNING/ERROR events.
+- Scores: `outcome`, `top_confidence`, `cost_usd`, `tool_calls` and `latency_s`.
+- Telemetry never breaks a run: without keys it is a no-op, and Langfuse errors are logged and ignored.
 
 Systems:
 
@@ -78,6 +122,22 @@ START → Orchestrator ─Send()→ ┌ Observability (logs, metrics)        ┐
 - **Smart tools**: logs come back as error-signature clusters and metrics as change-point onsets and magnitudes, never as raw dumps. This keeps tokens low and signal high.
 - **Fault injection** (declared per scenario, seeded): timeouts, unavailable backends, rate limits, partial shards, stale metrics, empty results.
 
+## Results
+
+10 incidents × 3 systems, 1 run each, total cost **$2.02** ([full analysis](docs/EVALUATION_RESULTS.md) · [raw tables](eval/results/summary.md) · [technical note](docs/TECHNICAL_NOTE.md)).
+
+| | mas | mas-cheap | single |
+|---|---|---|---|
+| Top-1 root-cause accuracy | **10/10** | 9/10 | **10/10** |
+| Outcome correctness | **10/10** | 8/10 | 8/10 |
+| Citation validity / key-evidence recall | 100% / 100% | 100% / 100% | 100% / 100% |
+| Tool calls (mean) | 34.7 | 35.1 | 39.3 |
+| Tokens in / out (mean) | 59k / 11k | 60k / 15k | 25k / 3k |
+| Latency (mean) | 147 s | 159 s | **51 s** |
+| Cost per incident | $0.109 | $0.057 | **$0.036** |
+
+**Takeaway:** on this dataset, a single agent with the same pre-aggregating tools is as accurate and about 3× cheaper. The multi-agent critic loop turned two "inconclusive" answers (misleading and tool-failure cases) into correct conclusions. With n=10 this is indicative, not significant.
+
 ## Dataset & evaluation
 
 `data/scenarios/S01–S10` cover: a control case, misleading coincident deploys, misleading history priors, conflicting observations, noisy chronic errors, tool failures (timeouts, partial, stale, unavailable) and an expected-inconclusive case. Ground truth is read **only** by the simulator and the grader. `tests/test_no_hardcoding.py` enforces that agent code and prompts never reference scenarios, and `tests/test_dataset.py` proves every scenario's key signals are discoverable through the tools.
@@ -107,12 +167,13 @@ docs/              design docs
 ## External dependencies
 - **OpenAI API** (via `langchain-openai`) for live runs and evaluation. Needs `OPENAI_API_KEY` and network access.
 - Python packages: `langgraph`, `langchain-openai`, `langchain-core`, `pydantic`, `numpy`, `pyyaml`, `typer`, `rich`, `python-dotenv`. Dev: `pytest`, `pytest-asyncio`, `ruff`.
-- No databases, Docker or cloud services.
+- UI: `streamlit`, `pandas`. Observability: `langfuse` (v5, optional at runtime).
+- Optional: Docker (local Postgres 16 for persistent sessions; `langgraph-checkpoint-postgres`, `psycopg`). Without it, sessions are in-memory. Langfuse Cloud is used only if you add its keys.
 
 ## Limitations / incomplete functionality
 - The telemetry is synthetic, generated from declared causal signals, so it is cleaner than real production data.
 - 10 scenarios × 1 run by default (`--repeats N` is supported), so results are indicative rather than statistically significant.
 - Grounding is measured by code (citation validity, claim coverage, key-evidence recall). There is no LLM-judge "semantic support" score yet.
 - Confidence comes from the LLM and is uncalibrated.
-- There is no persistence or checkpoint-resume (a LangGraph checkpointer could be added).
+- Human-in-the-loop resumes rebuild the run context from the checkpoint; wall-clock time spent waiting for the human is not counted in latency.
 - Pricing for cost estimates is hard-coded in `config.py` (checked 2026-11-19).

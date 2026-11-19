@@ -23,11 +23,17 @@ class ToolLoopResult:
 
 
 async def run_tool_loop(ctx: RunContext, role: str, system_prompt: str, user_prompt: str, allowed_tools: list[str],
-                        round_: int, max_turns: int) -> ToolLoopResult:
+                        round_: int, max_turns: int, max_calls: int | None = None) -> ToolLoopResult:
+    """Run tool turns until the model stops, ``max_turns``/``max_calls`` is reached, or the budget runs out.
+
+    ``max_calls`` is a per-task quota: calls beyond it are refused (no global budget is spent) so one
+    agent cannot drain the run's tool budget before the critic can ask for follow-up evidence.
+    """
     schemas = ctx.executor.tool_schemas(allowed_tools)
     messages: list[BaseMessage] = [SystemMessage(system_prompt), HumanMessage(user_prompt)]
     res = ToolLoopResult(messages=messages)
     seen_ids: set[str] = set()
+    used = 0
 
     while True:
         if res.turns >= max_turns:
@@ -44,8 +50,13 @@ async def run_tool_loop(ctx: RunContext, role: str, system_prompt: str, user_pro
             res.stopped_reason = "final"
             break
 
-        async def run_one(call: dict) -> ToolMessage:
+        async def run_one(call: dict, allowed_by_quota: bool) -> ToolMessage:
             name = call["name"]
+            if not allowed_by_quota:
+                content = json.dumps({"status": "error", "error": {
+                    "code": "QUOTA_REACHED", "message": f"Tool-call quota for this task ({max_calls}) is used up. "
+                                                        "Summarise what you found."}})
+                return ToolMessage(content=content, tool_call_id=call["id"], name=name)
             if name not in allowed_tools:
                 content = json.dumps({"status": "error", "error": {
                     "code": "BAD_INPUT", "message": f"Tool {name!r} is not available to this agent. "
@@ -57,8 +68,16 @@ async def run_tool_loop(ctx: RunContext, role: str, system_prompt: str, user_pro
                 res.evidence.append(ev)
             return ToolMessage(content=result_for_llm(result, ev), tool_call_id=call["id"], name=name)
 
-        tool_messages = await asyncio.gather(*(run_one(c) for c in ai.tool_calls))
+        grants = []
+        for c in ai.tool_calls:
+            ok = max_calls is None or used < max_calls
+            used += ok and c["name"] in allowed_tools
+            grants.append(ok)
+        tool_messages = await asyncio.gather(*(run_one(c, g) for c, g in zip(ai.tool_calls, grants, strict=True)))
         messages.extend(tool_messages)  # all results of one turn are returned together
+        if max_calls is not None and used >= max_calls:
+            res.stopped_reason = "quota"
+            break
         if ctx.budget.exhausted():
             res.stopped_reason = "budget"
             break

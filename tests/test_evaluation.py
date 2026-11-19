@@ -93,3 +93,24 @@ def test_cli_list_scenarios():
     res = CliRunner().invoke(app, ["list"])
     assert res.exit_code == 0
     assert "S01" in res.output and "S10" in res.output
+
+
+async def test_run_matrix_stops_at_cost_cap(tmp_path):
+    """A hard spend cap: once the cap is reached, the remaining runs are skipped (recorded, not run)."""
+    from rootcause_agents.llm import Usage
+
+    def pricey():  # each LLM call reports 1M input tokens on a priced model -> clearly over a tiny cap
+        llm = make_llm()
+        llm.usage_per_call = Usage(1_000_000, 0, 0)
+        llm.model = "gpt-6.1-terra"
+        return llm
+
+    settings = Settings(openai_api_key="sk-test", budget=Budget())
+    paths = [FIXTURES / "scenario_basic.yaml"] * 3
+    rows = await run_matrix(systems=["mas"], scenario_paths=paths, settings=settings, llm_factory=lambda s: pricey(),
+                            out_dir=tmp_path, topology_path=FIXTURES / "topology.yaml", history_path=None,
+                            sleep_scale=0.0, concurrency=1, max_cost_usd=0.5)
+    ran = [r for r in rows if not r.get("skipped")]
+    assert len(ran) == 1 and len(rows) == 3
+    assert all(r["skipped"] == "cost cap $0.50 reached" for r in rows if r.get("skipped"))
+    assert summarize(rows)["mas"]["n"] == 1  # skipped runs do not pollute the metrics

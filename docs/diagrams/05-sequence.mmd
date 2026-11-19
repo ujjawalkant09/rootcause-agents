@@ -1,0 +1,41 @@
+sequenceDiagram
+    autonumber
+    participant U as UI / CLI
+    participant O as Orchestrator
+    participant S as Scheduler
+    participant OB as Observability
+    participant DP as Dependency
+    participant B as Blackboard
+    participant R as Reasoning
+    participant C as Critic
+    participant RP as Reporting
+
+    U->>O: IncidentReport
+    O->>B: InvestigationPlan (tasks T1..Tn, deps)
+    O->>S: schedule ready tasks
+    par parallel
+        S->>OB: T1 logs+metrics for checkout
+        OB->>B: Evidence E1..E6 (1 tool call timed out → retried → partial)
+    and
+        S->>DP: T2 deploys/config/deps
+        DP->>B: Evidence E7..E10
+    and
+        S->>B: T3 history search → E11
+    end
+    S->>R: all gathering done
+    R->>B: H1 (deploy D-42, conf .55), H2 (DB saturation, conf .40)
+    B->>C: hypotheses + evidence
+    C->>O: NEED_MORE_EVIDENCE: "DB p99 before D-42?", "D-42 diff touches pool size?"
+    O->>S: follow-up tasks T4 (OBS), T5 (DEP)
+    par
+        S->>OB: T4
+        OB->>B: E12: DB p99 spiked 6 min BEFORE D-42
+    and
+        S->>DP: T5
+        DP->>B: E13: D-42 only changes UI copy
+    end
+    S->>R: re-reason (round 2)
+    R->>B: H2 (DB saturation, .78) > H1 (.12)
+    C->>O: ACCEPT
+    O->>RP: generate report
+    RP->>U: InvestigationReport (ranked H, facts vs assumptions, actions)

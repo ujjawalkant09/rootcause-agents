@@ -7,6 +7,7 @@ from pathlib import Path
 
 from rootcause_agents.context import RunContext
 from rootcause_agents.schemas import CriticVerdict, Evidence, Hypothesis, IncidentReport, SpecialistFindings
+from rootcause_agents.sim.generator import DEFAULT_METRICS
 
 PROMPTS = Path(__file__).resolve().parents[1] / "prompts"
 
@@ -31,9 +32,24 @@ def fmt_incident(inc: IncidentReport) -> str:
             f"Symptoms: " + "; ".join(inc.symptoms))
 
 
+def fmt_human(ctx: RunContext) -> str:
+    """Human-in-the-loop input. A lead to verify with tools, never evidence (it cannot be cited)."""
+    if not ctx.human_inputs:
+        return ""
+    return ("HUMAN INPUT from the on-call engineer (a lead to verify with tools; NOT evidence, cannot be cited):\n"
+            + "\n".join(f"- {h}" for h in ctx.human_inputs))
+
+
 def fmt_services(ctx: RunContext) -> str:
+    """Static environment description (cache-friendly): services, tiers and which metrics can be queried."""
     topo = ctx.store.topology
-    return "Known services: " + ", ".join(f"{name} ({spec.tier})" for name, spec in sorted(topo.services.items()))
+
+    def one(name: str, spec) -> str:
+        extra = f"; extra metrics: {', '.join(spec.metrics)}" if spec.metrics else ""
+        return f"{name} ({spec.tier}{extra})"
+
+    return ("Known services: " + ", ".join(one(n, s) for n, s in sorted(topo.services.items()))
+            + "\nMetrics on every service: " + ", ".join(DEFAULT_METRICS))
 
 
 def fmt_evidence(evidence: list[Evidence], limit: int = 80) -> str:

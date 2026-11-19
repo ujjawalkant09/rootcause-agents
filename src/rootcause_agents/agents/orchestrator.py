@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from rootcause_agents.agents.common import fmt_evidence, fmt_incident, fmt_verdicts, system_prompt
+from rootcause_agents.agents.common import fmt_evidence, fmt_human, fmt_incident, fmt_verdicts, system_prompt
 from rootcause_agents.context import RunContext
 from rootcause_agents.schemas import CriticVerdict, Evidence, InvestigationPlan, Task
 
@@ -40,8 +40,9 @@ def _sanitize(ctx: RunContext, tasks: list[Task], limit: int) -> list[Task]:
 async def plan(ctx: RunContext, round_: int, evidence: list[Evidence], verdicts: list[CriticVerdict]) -> list[Task]:
     limit = ctx.budget.budget.max_tasks_per_round
     last = verdicts[-1] if verdicts else None
-    user = "\n\n".join([
+    user = "\n\n".join(x for x in [
         fmt_incident(ctx.incident),
+        fmt_human(ctx),
         f"Round: {round_} of max {ctx.budget.budget.max_rounds}. Max tasks this round: {limit}. "
         f"Tool calls used: {ctx.budget.tool_calls}/{ctx.budget.budget.max_tool_calls}.",
         fmt_evidence(evidence, limit=40) if round_ > 1 else "",
@@ -49,8 +50,9 @@ async def plan(ctx: RunContext, round_: int, evidence: list[Evidence], verdicts:
         ("Plan tasks that answer ONLY the critic's latest evidence requests:\n" +
          "\n".join(f"- ({r.target_agent}, services={r.services}) {r.question} [discriminates: {r.discriminates}]"
                    for r in last.evidence_requests)) if last and last.evidence_requests else
-        "Create the initial investigation plan.",
-    ])
+        "Plan tasks that verify the on-call engineer's input above with tools." if round_ > 1 and ctx.human_inputs
+        else "Create the initial investigation plan.",
+    ] if x)
     messages = [SystemMessage(system_prompt(ctx, "orchestrator")), HumanMessage(user)]
     try:
         result = await ctx.llm.structured("orchestrator", messages, InvestigationPlan)

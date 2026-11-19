@@ -14,7 +14,7 @@
 | 06 | [Reliability & control](06-reliability-and-control.md) | Retries, budgets, termination, failure recovery, the inconclusive outcome |
 | 07 | [Dataset & evaluation](07-dataset-and-evaluation.md) | Test incidents, the single-agent baseline, metrics and the grading method |
 | 08 | [Project structure & roadmap](08-project-structure-and-roadmap.md) | Repo layout, setup, roadmap |
-| 09 | [Technical note](09-technical-note-draft.md) | Key decisions, trade-offs, limitations, improvements (≤500 words) |
+| 09 | [Technical note](09-technical-note.md) | Key decisions, trade-offs, limitations, improvements (≤500 words) |
 | 10 | [Design decisions (ADR log)](10-open-questions.md) | The decisions taken and why |
 | — | [References](references.md) | The research the design is based on |
 

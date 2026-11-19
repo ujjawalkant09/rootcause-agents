@@ -53,6 +53,13 @@ class Settings(BaseModel):
     breaker_cooldown_s: float = 60.0
     # --- cost: OpenAI prompt caching (stable prompt prefixes + per-role prompt_cache_key)
     prompt_cache: bool = True
+    # --- persistence + human-in-the-loop
+    database_url: str | None = None  # Postgres for LangGraph checkpoints; in-memory when unset
+    hitl_mode: str = "off"  # off | stuck | review (CLI/eval default off; the UI chooses)
+    # --- observability: Langfuse (optional; enabled when both keys are set)
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_base_url: str = "https://cloud.langfuse.com"
     budget: Budget = Field(default_factory=Budget)
     data_dir: Path = ROOT / "data"
     runs_dir: Path = ROOT / "runs"
@@ -77,6 +84,12 @@ class Settings(BaseModel):
             "fallback_api_key": env.get("FALLBACK_API_KEY") or None,
             "fallback_provider_models": _csv(env.get("FALLBACK_PROVIDER_MODELS")),
             "prompt_cache": env.get("PROMPT_CACHE", "1") not in ("0", "false", "False"),
+            "database_url": env.get("DATABASE_URL") or None,
+            "hitl_mode": env.get("HITL_MODE", "off"),
+            "langfuse_public_key": env.get("LANGFUSE_PUBLIC_KEY") or None,
+            "langfuse_secret_key": env.get("LANGFUSE_SECRET_KEY") or None,
+            "langfuse_base_url": env.get("LANGFUSE_BASE_URL") or env.get("LANGFUSE_HOST")
+            or "https://cloud.langfuse.com",
         }
         budget = Budget()
         if v := env.get("MAX_TOOL_CALLS"):

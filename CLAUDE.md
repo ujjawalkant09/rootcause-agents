@@ -23,7 +23,9 @@ uv run pytest -q                          # offline test suite
 uv run pytest -m live                     # live API smoke tests (needs OPENAI_API_KEY)
 uv run rootcause-agents list                   # list scenarios
 uv run rootcause-agents investigate S03 --system mas        # mas | mas-cheap | single
-uv run rootcause-agents eval --systems mas,single,mas-cheap # → eval/results/summary.md
+uv run rootcause-agents eval --systems mas,single,mas-cheap --max-cost 2 # → eval/results/summary.md
+uv run rootcause-agents ui                                 # Streamlit UI (or double-click start-ui.command)
+docker compose up -d                                       # local Postgres for persistent sessions (port 5433)
 uv run ruff check src tests
 ```
 
@@ -44,11 +46,17 @@ uv run ruff check src tests
 | `src/rootcause_agents/runner.py` | `investigate(scenario, system)` entry point → report + trace files |
 | `src/rootcause_agents/report.py` | Report → Markdown |
 | `src/rootcause_agents/tracing.py` | JSONL tracer + usage accounting |
-| `src/rootcause_agents/cli.py` | Typer CLI |
+| `src/rootcause_agents/cli.py` | Typer CLI (`list`, `investigate`, `eval --max-cost`, `ui`) |
+| `src/rootcause_agents/telemetry.py` | Optional Langfuse tracing: `NoopTelemetry` / `LangfuseTelemetry`, `observe()` typed observations, scores |
+| `src/rootcause_agents/persistence.py` | LangGraph checkpointer (Postgres via `DATABASE_URL`, else in-memory), checkpoint serde allowlist, session registry |
+| `src/rootcause_agents/ui/` | Streamlit UI: `app.py` (page), `view.py` (pure, tested helpers) |
 | `eval/grader.py`, `eval/run_eval.py` | Metrics + comparison of MAS vs MAS-cheap vs single-agent |
 | `data/topology.yaml`, `data/history/incidents.yaml`, `data/scenarios/*.yaml` | Synthetic environment + test incidents |
 
 ## Key design invariants
+- **Human-in-the-loop**: `human_review` node uses `interrupt()`; no side effects before it (the node re-runs on resume). Human hints are leads, never evidence. `resume_session` must rebuild everything from the checkpoint (`meta` + `snapshot` in state). Max 2 questions per run; `investigate()`/eval never pause.
+- **Observability never breaks a run**: all Langfuse calls go through `LangfuseTelemetry._safe`. Callbacks and the agent name are bound on the chat model (not the outer runnable) so each LLM call is one generation without LangChain noise. Observation names are stable (no IDs or rounds in names; those go in metadata).
+- **Per-task tool quota** (`Budget.max_tool_calls_per_task`) keeps budget for critic-driven follow-up rounds.
 - **Prompt-cache friendly prompts**: system message = `agents.common.system_prompt(ctx, role)` (instructions + static environment only). Never put incident-specific or time-varying content in it; `tests/test_prompt_cache.py` enforces this.
 - **Token diet**: tool results go to the model through `tools.executor.compact_data`. The full data stays in the ledger.
 - **Evidence ledger**: every successful tool call → `Evidence` with a code-assigned ID (`E-<n>`). Hypotheses and claims cite IDs, and `validation.py` rejects unknown IDs. Claims without evidence must be `kind="assumption"`.

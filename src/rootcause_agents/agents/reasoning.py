@@ -8,6 +8,7 @@ from rootcause_agents.agents.common import (
     fmt_evidence,
     fmt_findings,
     fmt_gaps,
+    fmt_human,
     fmt_incident,
     fmt_verdicts,
     system_prompt,
@@ -26,7 +27,7 @@ async def reason(ctx: RunContext, evidence: list[Evidence], findings: list[Speci
                  verdicts: list[CriticVerdict], gaps: list[str]) -> HypothesisSet:
     known = {e.id for e in evidence}
     user = "\n\n".join([
-        fmt_incident(ctx.incident), fmt_evidence(evidence), fmt_findings(findings), fmt_gaps(gaps),
+        fmt_incident(ctx.incident), fmt_human(ctx), fmt_evidence(evidence), fmt_findings(findings), fmt_gaps(gaps),
         fmt_verdicts(verdicts),
         "Produce the ranked competing hypotheses now. Address every issue raised in previous critiques.",
     ])

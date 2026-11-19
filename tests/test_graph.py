@@ -136,3 +136,21 @@ async def test_single_agent_baseline(tmp_path):
     assert report.outcome == "ROOT_CAUSE_IDENTIFIED"
     assert report.stats.tool_calls >= 3
     assert report.ranked_hypotheses[0].root_cause_component == "payments-db"
+
+
+async def test_custom_ticket_is_investigated_against_a_simulated_environment(tmp_path):
+    """Any ticket (title/description/symptoms/services) can be run; telemetry comes from the chosen environment."""
+    from rootcause_agents.config import Settings
+    from rootcause_agents.runner import investigate
+    from tests.conftest import FIXTURES
+    from tests.helpers import make_llm
+
+    llm = make_llm()
+    ticket = {"title": "Users see spinning wheel on pay page", "description": "Reported by support desk.",
+              "symptoms": ["pay page slow"], "affected_services": ["checkout"]}
+    report = await investigate(FIXTURES / "scenario_basic.yaml", "mas", settings=Settings(openai_api_key="sk"),
+                               llm=llm, topology_path=FIXTURES / "topology.yaml", history_path=None,
+                               out_dir=tmp_path, sleep_scale=0, ticket=ticket)
+    first_user = llm.calls[0]["messages"][1].content
+    assert "Users see spinning wheel on pay page" in first_user and "pay page slow" in first_user
+    assert report.incident_id.startswith("INC-")

@@ -32,16 +32,19 @@ def _clean_findings(f: SpecialistFindings, known: set[str]) -> SpecialistFinding
 
 
 async def run_specialist(ctx: RunContext, agent: str, task: Task, round_: int) -> SpecialistOutput:
+    quota = ctx.budget.budget.max_tool_calls_per_task
     user = "\n\n".join([
         fmt_incident(ctx.incident),
         f"Round: {round_}",
         f"YOUR TASK: {task.objective}\nFocus services: {', '.join(task.services)}"
         + (f"\nWhy: {task.rationale}" if task.rationale else ""),
+        f"Quota: at most {quota} tool calls for this task. Spend them on the highest-value queries "
+        "(follow the dependency path from the affected services; do not sweep every service).",
     ])
     loop = await run_tool_loop(ctx, agent, system_prompt(ctx, agent), user, SPECIALIST_TOOLS[agent], round_,
-                               max_turns=ctx.budget.budget.max_tool_turns_per_agent)
+                               max_turns=ctx.budget.budget.max_tool_turns_per_agent, max_calls=quota)
     out = SpecialistOutput(evidence=loop.evidence)
-    if loop.stopped_reason != "final":
+    if loop.stopped_reason not in ("final", "quota"):
         out.gaps.append(f"{agent} stopped early ({loop.stopped_reason}) while working on: {task.objective[:80]}")
     if not loop.evidence:
         out.gaps.append(f"{agent} collected no evidence for: {task.objective[:80]}")

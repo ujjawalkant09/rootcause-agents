@@ -13,3 +13,10 @@ eval/results/runs/
 
 # local-only material (never pushed)
 submission/
+eval/results/*.log
+# local tooling and intermediate eval runs (final summary is committed)
+.agents/
+.claude/
+eval/results/pilot*/
+eval/results/full/
+eval/results/ui-*/
