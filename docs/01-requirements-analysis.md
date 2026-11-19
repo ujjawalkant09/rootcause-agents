@@ -35,8 +35,8 @@ Incident data is often incomplete, contradictory or misleading, so the system mu
 | D3 | Inconclusive outcome | `Report.outcome ∈ {ROOT_CAUSE_IDENTIFIED, PROBABLE, INCONCLUSIVE}`, driven by confidence thresholds and the Critic | 06 |
 | E1 | ≥10 test incidents incl. misleading, conflicting, tool failures | 12 scenarios (see 07), each tagged with its adversarial traits | 07 |
 | E2 | Single-agent baseline, same tools | `SingleAgentInvestigator`: a ReAct loop with an identical tool registry and the same budget | 07 |
-| E3 | Measure accuracy, grounding, tool calls, latency, tokens | `eval/run_eval.py` writes a per-run JSONL plus summary tables in CSV and Markdown | 07 |
-| F1 | Runnable implementation + setup | `uv` project, `make setup`, `make demo` and `make eval` | 08 |
+| E3 | Measure accuracy, grounding, tool calls, latency, tokens | `evaluation.run_matrix` (Results page) writes a per-run JSONL plus summary tables in CSV and Markdown | 07 |
+| F1 | Runnable implementation + setup | `uv` project, `make setup`, web UI (`start-ui.command` / `make app`) | 08 |
 | F2 | Architecture diagram + coordination | `docs/03-architecture.md` (Mermaid) | 03 |
 | F3 | Synthetic dataset + automated tests | `data/scenarios/*.yaml`, a generator and a `pytest` suite (offline via FakeLLM) | 05, 07, 08 |
 | F4 | Eval results comparing both approaches | `eval/results/summary.md` | 07 |

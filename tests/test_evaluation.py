@@ -1,7 +1,5 @@
 import json
 
-from typer.testing import CliRunner
-
 from rootcause_agents.budget import Budget
 from rootcause_agents.config import Settings
 from rootcause_agents.evaluation import grade, run_matrix, summarize
@@ -85,14 +83,6 @@ async def test_run_matrix_and_summary(tmp_path):
     assert (tmp_path / "summary.csv").exists()
     agg = summarize(rows)
     assert agg["mas"]["n"] == 1 and agg["mas"]["top1_accuracy"] == 1.0
-
-
-def test_cli_list_scenarios():
-    from rootcause_agents.cli import app
-
-    res = CliRunner().invoke(app, ["list"])
-    assert res.exit_code == 0
-    assert "S01" in res.output and "S10" in res.output
 
 
 async def test_run_matrix_stops_at_cost_cap(tmp_path):

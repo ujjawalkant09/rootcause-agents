@@ -1,6 +1,6 @@
 """RootCause Agents – web UI (Streamlit).
 
-Start with:  uv run rootcause-agents ui   (or double-click start-ui.command on macOS)
+Start: double-click start-ui.command (macOS), or `make app` / `uv run streamlit run src/rootcause_agents/ui/app.py`
 
 Pages (top navigation):
 - Investigate: describe what happened, choose how to investigate, watch progress, answer the agents, read the report

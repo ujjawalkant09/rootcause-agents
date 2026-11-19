@@ -1,62 +1,44 @@
 # 08 – Project Structure, Setup & Roadmap
 
-## 1. Repository layout
-
-> As built, the layout differs slightly (e.g. `tools/impl.py` + `tools/executor.py`, `evaluation.py` inside the package). See the root `README.md` → Project layout and `CLAUDE.md` → Architecture map.
+## 1. Repository layout (as built)
 
 ```
 rootcause-agents/
-├── README.md                     # setup, usage, limitations, external deps
-├── pyproject.toml                # uv-managed
-├── Makefile                      # setup | test | demo | eval
-├── .env.example                  # OPENAI_API_KEY=  MAIN_MODEL=gpt-6.2-sol  WORKER_MODEL=gpt-6-luna
-├── docs/                         # these design docs + final TECHNICAL_NOTE.md
+├── README.md                     # setup, usage, results, limitations, external deps
+├── CLAUDE.md                     # rules and architecture map for AI-assisted development
+├── pyproject.toml  uv.lock       # uv-managed
+├── Makefile                      # setup | app | test | lint | live
+├── start-ui.command              # double-click to open the web UI (macOS)
+├── docker-compose.yml            # local Postgres for saved sessions
+├── .env.example                  # OpenAI, models, fallbacks, Postgres, Langfuse
+├── .streamlit/config.toml        # UI theme
+├── docs/                         # design docs, TECHNICAL_NOTE.md, EVALUATION_RESULTS.md, diagrams/
 ├── src/rootcause_agents/
-│   ├── cli.py                    # `rootcause-agents investigate S03 --system mas|mas-cheap|single`, `rootcause-agents eval`
-│   ├── config.py                 # models, budgets (from .env)
-│   ├── schemas.py                # all Pydantic contracts
-│   ├── llm.py                    # ChatOpenAI factory, usage tracking callback
-│   ├── state.py                  # InvestigationState (TypedDict + reducers), citation validator, budget
-│   ├── graph.py                  # LangGraph StateGraph: nodes, Send fan-out, critic router
-│   ├── agents/
-│   │   ├── tool_loop.py          # bounded tool-calling loop shared by specialists + baseline
-│   │   ├── orchestrator.py  observability.py  dependency.py
-│   │   ├── reasoning.py  critic.py  reporter.py
-│   │   └── single_agent.py       # baseline (same tools, same budget)
-│   ├── prompts/*.md              # system prompts
-│   ├── tools/
-│   │   ├── registry.py           # LangChain @tool wrappers with Pydantic args
-│   │   ├── logs.py  metrics.py  deployments.py  config_changes.py  dependencies.py  history.py
-│   │   ├── analytics.py          # log templating, change-point detection
-│   │   └── faults.py             # FaultInjector + retry
-│   ├── sim/generator.py          # scenario YAML → telemetry store
-│   ├── report.py                 # JSON → Markdown
-│   └── tracing.py                # JSONL events
-├── data/
-│   ├── topology.yaml
-│   ├── history/incidents.yaml
-│   └── scenarios/S01…S10.yaml
-├── eval/
-│   ├── run_eval.py               # MAS vs MAS-cheap vs single
-│   ├── grader.py
-│   └── results/                  # runs.jsonl, summary.md, summary.csv
-├── tests/                        # offline pytest (fake chat model)
-└── runs/                         # per-run traces + reports
+│   ├── config.py  schemas.py  budget.py  validation.py  context.py  tracing.py  report.py
+│   ├── llm.py                    # OpenAILLM (fallback chain, circuit breaker, prompt caching), ScriptedLLM (tests)
+│   ├── graph.py                  # LangGraph StateGraph: nodes, Send fan-out, critic loop, human_review interrupt
+│   ├── runner.py                 # start_session / resume_session / investigate
+│   ├── persistence.py            # Postgres checkpointer + session registry
+│   ├── telemetry.py              # Langfuse tracing (optional)
+│   ├── evaluation.py             # grading + comparison matrix
+│   ├── agents/                   # orchestrator, specialists, reasoning, critic, reporter, single_agent, tool_loop
+│   ├── tools/                    # impl (6 tools), executor, faults, analytics
+│   ├── sim/                      # scenario models, generator, store
+│   ├── prompts/*.md              # system prompts (generic)
+│   └── ui/                       # Streamlit app: app.py, app_pages/, common.py, jobs.py, view.py
+├── data/                         # topology.yaml, history/incidents.yaml, scenarios/S01…S10.yaml
+├── eval/results/                 # evaluation summary (summary.md, summary.csv)
+├── tests/                        # offline pytest suite (scripted LLM)
+└── runs/                         # per-run traces + reports (local)
 ```
 
 ## 2. Dependencies
-`langgraph`, `langchain-openai`, `langchain-core`, `pydantic`, `typer`, `rich`, `pyyaml`, `numpy`, `python-dotenv`, plus `pytest` and `pytest-asyncio` for development.
-External: the **OpenAI API** (needs `OPENAI_API_KEY` and internet). Tests run fully offline.
+`langgraph`, `langgraph-checkpoint-postgres`, `langchain-openai`, `langchain-core`, `pydantic`, `pyyaml`, `numpy`, `python-dotenv`, `streamlit`, `pandas`, `langfuse`, `psycopg`, plus `pytest`, `pytest-asyncio` and `ruff` for development.
+External: the **OpenAI API** (needs `OPENAI_API_KEY` and internet). Optional: Docker (Postgres) and Langfuse Cloud. Tests run fully offline.
 
-## 3. Setup (target UX)
+## 3. Setup
 
-```bash
-make setup                     # uv sync
-cp .env.example .env           # add OPENAI_API_KEY
-make test                      # offline tests
-uv run rootcause-agents investigate S03 --system mas
-make eval                      # → eval/results/summary.md
-```
+The web UI is the only interface. Install uv, copy `.env.example` to `.env` and add the OpenAI key, optionally `docker compose up -d`, then double-click `start-ui.command` (or `make app`). See the root README.
 
 ## 4. Build plan (MVP)
 

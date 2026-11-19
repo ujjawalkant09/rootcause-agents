@@ -16,18 +16,17 @@ Multi-agent **production incident investigation** system. It receives an inciden
 5. Tools **never raise** to agents. They always return a `ToolResult` (status ok/partial/stale/empty/error).
 6. Keep the docs in `docs/` in sync when the design changes.
 
-## Commands
+## Commands (developers)
+The product has **no CLI**: users work only in the Streamlit UI.
 ```bash
 uv sync                                   # install
+make app                                  # open the web UI (or double-click start-ui.command)
+docker compose up -d                      # local Postgres for persistent sessions (port 5433)
 uv run pytest -q                          # offline test suite
 uv run pytest -m live                     # live API smoke tests (needs OPENAI_API_KEY)
-uv run rootcause-agents list                   # list scenarios
-uv run rootcause-agents investigate S03 --system mas        # mas | mas-cheap | single
-uv run rootcause-agents eval --systems mas,single,mas-cheap --max-cost 2 # → eval/results/summary.md
-uv run rootcause-agents ui                                 # Streamlit UI (or double-click start-ui.command)
-docker compose up -d                                       # local Postgres for persistent sessions (port 5433)
 uv run ruff check src tests
 ```
+Investigations and evaluations are started from the UI (Investigate and Results pages). Programmatic entry points: `runner.start_session` / `resume_session` / `investigate`, `evaluation.run_matrix`.
 
 ## Architecture map (where things live)
 | Path | Responsibility |
@@ -46,11 +45,10 @@ uv run ruff check src tests
 | `src/rootcause_agents/runner.py` | `investigate(scenario, system)` entry point → report + trace files |
 | `src/rootcause_agents/report.py` | Report → Markdown |
 | `src/rootcause_agents/tracing.py` | JSONL tracer + usage accounting |
-| `src/rootcause_agents/cli.py` | Typer CLI (`list`, `investigate`, `eval --max-cost`, `ui`) |
 | `src/rootcause_agents/telemetry.py` | Optional Langfuse tracing: `NoopTelemetry` / `LangfuseTelemetry`, `observe()` typed observations, scores |
 | `src/rootcause_agents/persistence.py` | LangGraph checkpointer (Postgres via `DATABASE_URL`, else in-memory), checkpoint serde allowlist, session registry |
 | `src/rootcause_agents/ui/` | Streamlit UI: `app.py` (top navigation), `app_pages/` (investigate, sessions, results, settings_page), `common.py` (shared widgets: progress timeline, agents' question chat, report view), `jobs.py` (background runs), `view.py` (pure, tested helpers). Theme in `.streamlit/config.toml`; follow the `developing-with-streamlit` skill |
-| `eval/grader.py`, `eval/run_eval.py` | Metrics + comparison of MAS vs MAS-cheap vs single-agent |
+| `src/rootcause_agents/evaluation.py`, `eval/results/` | Metrics + comparison of MAS vs MAS-cheap vs single-agent (run from the Results page) |
 | `data/topology.yaml`, `data/history/incidents.yaml`, `data/scenarios/*.yaml` | Synthetic environment + test incidents |
 
 ## Key design invariants

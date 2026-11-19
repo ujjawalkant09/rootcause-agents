@@ -55,15 +55,6 @@ def test_list_runs_and_eval_results(tmp_path):
     assert list_runs(tmp_path / "missing") == [] and list_eval_results(tmp_path / "missing") == []
 
 
-def test_cli_has_ui_command():
-    from typer.testing import CliRunner
-
-    from rootcause_agents.cli import app
-
-    res = CliRunner().invoke(app, ["ui", "--help"])
-    assert res.exit_code == 0 and "browser" in res.output.lower()
-
-
 def test_background_job_survives_independently_and_collects_events():
     """Runs happen in a worker thread, so a UI rerun can no longer kill an investigation midway."""
     import time

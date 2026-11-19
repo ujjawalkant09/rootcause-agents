@@ -14,7 +14,7 @@
 | Schemas | **Pydantic v2** | Agent contracts, tool I/O and structured LLM outputs (`.with_structured_output(Model)`) |
 | Tools | LangChain `@tool` functions with Pydantic args | Structured inputs and outputs, and the same registry for both systems |
 | Simulation data | YAML scenarios plus a seeded generator | Deterministic and readable |
-| CLI | `typer` + `rich` | No frontend needed |
+| Interface | Streamlit web UI | Simple, testable, no separate frontend build |
 | Tests | `pytest` + a **fake chat model** (scripted responses) | Offline, free and deterministic |
 | Packaging | `uv` + `pyproject.toml` + `Makefile` | One-command setup |
 

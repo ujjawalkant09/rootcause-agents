@@ -23,9 +23,12 @@ The design docs are in [`docs/`](docs/README.md) (architecture and coordination 
 
 ## Quick start
 
-**Easiest (no commands):** double-click `start-ui.command` (macOS), or run `make ui`. The UI opens at http://localhost:8501.
+Everything is done in the **web UI**; there is no command-line tool.
 
-For **saved sessions and agents that ask you for input**, start the local Postgres once with `docker compose up -d` (Docker Desktop must be running). `DATABASE_URL` in `.env` points to it.
+1. **Install** [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python ≥3.11 is installed by uv if needed) and, optionally, [Docker Desktop](https://www.docker.com/products/docker-desktop/) for saved sessions.
+2. **Configure:** copy `.env.example` to `.env` and put your `OPENAI_API_KEY` in it (optionally Langfuse keys).
+3. **Saved sessions (optional):** with Docker running, start the local Postgres once: `docker compose up -d`.
+4. **Open the app:** double-click **`start-ui.command`** (macOS). On Windows/Linux run `make app` (or `uv run streamlit run src/rootcause_agents/ui/app.py`). The app opens at http://localhost:8501.
 
 | Page | What you can do |
 |---|---|
@@ -36,21 +39,7 @@ For **saved sessions and agents that ask you for input**, start the local Postgr
 
 Custom tickets are investigated against the simulated telemetry of the environment you pick; no real production systems are queried.
 
-**Command line:**
-
-```bash
-# prerequisites: Python ≥3.11, uv (https://docs.astral.sh/uv/)
-make setup                 # uv sync
-cp .env.example .env       # then put your OPENAI_API_KEY in .env
-make test                  # 130+ offline tests, no API key needed
-
-uv run rootcause-agents list                              # the 10 synthetic incidents
-uv run rootcause-agents investigate S03 --system mas      # live trace + report (runs/<id>/report.md)
-uv run rootcause-agents investigate S03 --system single   # single-agent baseline
-make eval                                            # MAS vs MAS-cheap vs single → eval/results/summary.md
-uv run rootcause-agents eval --scenarios S01,S03 --max-cost 1.0  # hard spend cap (default $2)
-uv run rootcause-agents ui                                # web UI
-```
+**For developers:** `make test` runs the offline test suite (no API key needed), `make lint` runs ruff, and `make live` runs two real-API smoke tests.
 
 ### Observability with Langfuse (optional)
 
@@ -153,26 +142,27 @@ Results go to `eval/results/summary.md`, plus per-run reports and traces under `
 ## Project layout
 
 ```
-src/rootcause_agents/   config, schemas, llm, budget, validation, graph, runner, evaluation, cli
+src/rootcause_agents/   config, schemas, llm, budget, validation, graph, runner, evaluation, persistence, telemetry
+  ui/              Streamlit app: app.py, app_pages/ (investigate, sessions, results, settings), common.py, jobs.py, view.py
   agents/          orchestrator, specialists, reasoning, critic, reporter, single_agent, tool_loop
   tools/           impl (6 tools), executor (retry/memo/evidence/budget), faults, analytics
   sim/             scenario models, generator, store
   prompts/         system prompts (generic)
 data/              topology, incident history, scenarios
 tests/             offline pytest suite (scripted LLM); `-m live` for real API smoke tests
-eval/              run_eval.py wrapper + results
+eval/results/      evaluation summary (run new evaluations from the Results page)
 docs/              design docs
 ```
 
 ## External dependencies
 - **OpenAI API** (via `langchain-openai`) for live runs and evaluation. Needs `OPENAI_API_KEY` and network access.
-- Python packages: `langgraph`, `langchain-openai`, `langchain-core`, `pydantic`, `numpy`, `pyyaml`, `typer`, `rich`, `python-dotenv`. Dev: `pytest`, `pytest-asyncio`, `ruff`.
+- Python packages: `langgraph`, `langchain-openai`, `langchain-core`, `pydantic`, `numpy`, `pyyaml`, `python-dotenv`. Dev: `pytest`, `pytest-asyncio`, `ruff`.
 - UI: `streamlit`, `pandas`. Observability: `langfuse` (v5, optional at runtime).
 - Optional: Docker (local Postgres 16 for persistent sessions; `langgraph-checkpoint-postgres`, `psycopg`). Without it, sessions are in-memory. Langfuse Cloud is used only if you add its keys.
 
 ## Limitations / incomplete functionality
 - The telemetry is synthetic, generated from declared causal signals, so it is cleaner than real production data.
-- 10 scenarios × 1 run by default (`--repeats N` is supported), so results are indicative rather than statistically significant.
+- 10 scenarios × 1 run each, so results are indicative rather than statistically significant.
 - Grounding is measured by code (citation validity, claim coverage, key-evidence recall). There is no LLM-judge "semantic support" score yet.
 - Confidence comes from the LLM and is uncalibrated.
 - Human-in-the-loop resumes rebuild the run context from the checkpoint; wall-clock time spent waiting for the human is not counted in latency.

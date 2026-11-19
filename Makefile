@@ -1,22 +1,16 @@
-.PHONY: setup test live lint demo eval ui
+.PHONY: setup app test lint live
 
-setup:
+setup:  ## install dependencies
 	uv sync
 
-test:
-	uv run pytest -q
+app:  ## open the web UI (same as double-clicking start-ui.command)
+	uv run streamlit run src/rootcause_agents/ui/app.py
 
-live:
-	uv run pytest -m live -q
+test:  ## offline test suite (no API key needed)
+	uv run pytest -q
 
 lint:
 	uv run ruff check src tests
 
-demo:
-	uv run rootcause-agents investigate S03 --system mas
-
-eval:
-	uv run rootcause-agents eval --systems mas,single,mas-cheap
-
-ui:  ## open the web UI
-	uv run rootcause-agents ui
+live:  ## real-API smoke tests (needs OPENAI_API_KEY)
+	uv run pytest -m live -q
